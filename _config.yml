@@ -21,7 +21,7 @@ github_username:  renlulu
 # googleplus_username: +jekyll
 
 # About Section
-# about_title: About Me
+# about_title: 关于我
 about_profile_image: images/profile.jpg
 about_content: | # this will include new lines to allow paragraphs
   你好，我叫小火。我是一名软件工程师，目前在上海一家初创区块链公司任研发总监，主要负责区块链相关的产品研发和管理工作。同时我也是区块链技术社区 FireStack
@@ -34,6 +34,7 @@ about_content: | # this will include new lines to allow paragraphs
 
 # Experience Section
 # experience_title: Experience
+
 
 # Education Section
 # educaton_title: Education
