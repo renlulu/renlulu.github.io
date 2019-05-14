@@ -3,30 +3,31 @@ repository: sproogen/resume-theme
 # favicon: images/favicon.ico
 
 # Personal info
-name: Brett Harris
-title: Senior Network System Administrator
-email: brett.h@email.co.uk
-website: www.github.com/sproogen/resume-theme
+name: 小火
+title: 软件工程师
+email: xiaohuo200@gmail.com
+website: https://renlulu.github.io/
 
 # Social links
-twitter_username: facespics
-github_username:  sproogen
+twitter_username: xiaohuo200
+github_username:  renlulu
 # dribbble_username: jekyll
 # facebook_username: jekyll
 # flickr_username: jekyll
-instagram_username: chillwildlife
-linkedin_username: jameswgrant
+#instagram_username: chillwildlife
+#linkedin_username: jameswgrant
 # pinterest_username: jekyll
-youtube_username: globalmtb
+#youtube_username: globalmtb
 # googleplus_username: +jekyll
 
 # About Section
 # about_title: About Me
 about_profile_image: images/profile.jpg
 about_content: | # this will include new lines to allow paragraphs
-  Hi, my name's Brett and I'm a senior network system administrator. As well as administrating systems I also have experience making software and web apps. I have worked at a number of companies gaining teamwork and leadership skills.
-
-  I am most skilled in: <mark>AWS</mark> and <mark>Eating Pizza</mark>
+  你好，我叫小火。我是一名软件工程师，目前在上海一家初创区块链公司任研发总监，主要负责区块链相关的产品研发和管理工作。同时我也是区块链技术社区 FireStack
+  的联合创始人。我在 2016年开始接触区块链技术，并为联盟链项目 R3 Corda 贡献代码和社区项目，成为其 contributor。此后主要精力投向公链技术，在公链项目 Zilliqa
+  的 grant 资助下，已完成并交付 Zilliqa go sdk 和 java sdk；并参与对接 Binance，OKEx，KuCoin 等多家交易所和钱包。同时，我也是《精通以太坊》
+  （机械工业出版社 ISBN：9787111624929）的联合译者。个人公众号：Monad实验室。
 
 # Projects Section
 # projects_title: Projects
