@@ -26,7 +26,7 @@ about_profile_image: images/profile.jpg
 about_content: | # this will include new lines to allow paragraphs
   你好，我叫小火。我是一名软件工程师，主要方向是分布式系统和区块链。我在 2016年开始接触区块链技术，并为联盟链项目 R3 Corda 贡献代码和社区项目，成为其 contributor。此后主要精力投向公链技术，在公链项目 Zilliqa
   的 grant 资助下，已完成并交付 Zilliqa go sdk 和 java sdk；并参与对接 Binance，OKEx，KuCoin 等多家交易所和钱包; 随后全职加入 Zilliqa; 同时，我也是《精通以太坊》
-  （机械工业出版社 ISBN：9787111624929）的联合译者。个人公众号：Monad实验室。
+  （机械工业出版社 ISBN：9787111624929）的联合译者。Twitter: https://twitter.com/xiaohuo200 LinkedIn: https://www.linkedin.com/in/renlulu/
 
 # Projects Section
 # projects_title: Projects
