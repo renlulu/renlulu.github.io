@@ -120,17 +120,20 @@ content:
         title: Harmony Core Rosetta-API Extension
         link: https://github.com/harmony-one/bounties/issues/3
         quote: >
-          Implement balance tracking of staked ONE token for the Rosetta-API (details).
-          Implement ALL staking transaction constructions for the Rosetta-API (details).
-          Implement the /call endpoint for the Rosetta-API (details).
+
         description: | # this will include new lines to allow paragraphs
+          - Implement balance tracking of staked ONE token for the Rosetta-API (details).
+          - Implement ALL staking transaction constructions for the Rosetta-API (details).
+          - Implement the /call endpoint for the Rosetta-API (details).
 
       - layout: left
         title: rosetta-sdk-go
         link: https://github.com/coinbase/rosetta-sdk-go
         quote: >
-          The rosetta-sdk-go provides a collection of packages used for interaction with the Rosetta API specification. Much of the code in this repository is generated from the rosetta-specifications repository.
+
         description: | # this will include new lines to allow paragraphs
+          The rosetta-sdk-go provides a collection of packages used for interaction with the Rosetta API specification. Much of the code in this repository is generated from the rosetta-specifications repository.
+
 
       - layout: left
         title: spring-boot-starter-swagger
