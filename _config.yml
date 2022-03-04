@@ -48,7 +48,7 @@ linkedin_username: renlulu
 # about_title: About Me
 # about_profile_image: images/recommendation.png
 about_content: | # this will include new lines to allow paragraphs
-   你好，我叫小火。我是一名软件工程师，主要方向是分布式系统和区块链。我在 2016年开始接触区块链技术，并为联盟链项目 R3 Corda 贡献代码和社区项目，成为其 contributor。此后主要精力投向公链技术，在公链项目 Zilliqa 的 grant 资助下，已完成并交付 Zilliqa go sdk 和 java sdk；并参与对接 Binance，OKEx，KuCoin 等多家交易所和钱包; 随后全职加入 Zilliqa; 同时，我也是《精通以太坊》（机械工业出版社 ISBN：9787111624929）的联合译者
+   你好,我叫小火.我是一名软件工程师,主要方向是分布式系统和区块链。我在 2016 年开始接触区块链技术,并为联盟链项目 R3 Corda 贡献代码和社区项目, 成为其 contributor. 此后主要精力投向公链技术, 在公链项目 Zilliqa 的 grant 资助下, 已完成并交付 Zilliqa go sdk 和 java sdk; 并参与对接 Binance, OKEx, KuCoin 等多家交易所和钱包; 随后全职加入 Zilliqa; 同时, 我也是《精通以太坊》(机械工业出版社 ISBN: 9787111624929)的联合译者
 
 content:
 
@@ -65,13 +65,13 @@ content:
           Zilliqa was launched in 2017 when our founders created a high-throughput public blockchain platform designed to scale thousands ​of transactions per second. As blockchain technology evolves, our efforts are centred around streamlining the efficiency, trust, and transparency of Web 3.0.
         description: | # this will include new lines to allow paragraphs
           - Non-custodial seed node staking (非托管节点质押协议):
-             - 负责协议的设计,合约实现以及日常运营; 现有机构节点 16 家，协议最高管理资金量超过 10 亿美金
+             - 负责协议的设计,合约实现以及日常运营; 现有机构节点 16 家, 协议最高管理资金量超过 10 亿美金
              - 协议设计 RFC: https://github.com/Zilliqa/ZIP/blob/master/zips/zip-11.md
              - 合约实现: https://github.com/Zilliqa/staking-contract
              - 项目主页: https://stake.zilliqa.com/
 
           - ZILBridge:
-             - 基于 polynetwork 的去中心化跨链桥协议, 目前已跨链项目 7 个，Incoming 总资产 4400 万美金，实时数据见 https://zilstream.com/bridge
+             - 基于 polynetwork 的去中心化跨链桥协议, 目前已跨链项目 7 个, Incoming 总资产 4400 万美金, 实时数据见 https://zilstream.com/bridge
              - 负责 zilliqa relayer 的研发和维护: https://github.com/Zilliqa/zilliqa-relayer
              - 负责管理合约的研发: https://github.com/Switcheo/carbon-polynetwork-zil
              - 负责新项目的 onboarding
@@ -90,15 +90,15 @@ content:
         sub_title: 软件工程师
         caption: 2017/3 - 2018/3
         quote: >
-          DaoCloud 致力于改变世界创建和交付应用的方式，用技术的力量帮助企业实现数字化转型。
+          DaoCloud 致力于改变世界创建和交付应用的方式, 用技术的力量帮助企业实现数字化转型.
         description: | # this will include new lines to allow paragraphs
-          - 东风新能源监控系统 该平台系东风汽车对旗下新能源车进实时监控和依照相关合规要求对数据进上报。该项目主要使用微服务框架springboot和NIO框架Netty，深度实践多个spring cloud组件。参与系统的架构和设计;参与多个微服务模块的具体编码和容化
+          - 东风新能源监控系统 该平台系东风汽车对旗下新能源车进实时监控和依照相关合规要求对数据进上报. 该项目主要使用微服务框架 springboot 和 NIO 框架 Netty,深度实践多个 spring cloud 组件. 参与系统的架构和设计; 参与多个微服务模块的具体编码和容易化
 
-          - 浦发银Caas平台 主要负责整个支付链系统的微服务和容化改造工作，并配合支付链压测和后续维护。
+          - 浦发银Caas平台 主要负责整个支付链系统的微服务和容化改造工作, 并配合支付链压测和后续维护.
 
-          - 新疆红有软件微服务咨询 主要负责对新疆红有软件进微服务和devops培训，内容涵盖:版本控制工具。Git的使用，并详细介绍gitlab和gitflow微服务工具链的使用,包括开发工具，IDEA，打包构建工具Maven、Gradle，流水线工具dcs以及云原微服务开发框架SpringBoot培训SpringCloud培训。
+          - 新疆红有软件微服务咨询 主要负责对新疆红有软件进微服务和devops培训, 内容涵盖: 版本控制工具 Git 的使用, 并详细介绍 gitlab 和 gitflow 微服务工具链的使用, 包括开发工具, IDEA, 打包构建工具 Maven, Gradle, 流水线工具 dcs 以及云原微服务开发框架 SpringBoot 培训 SpringCloud 培训
 
-          - 上证券交所 负责参与上证微服务平台的建设，内容涵盖服务治、熔断、配置中心、服务监控、API网关、用户中心和消息中心等。负责参与多个微服务中间件和容结合的高可用方案，Mysql、Redis、RabbitMQ、Zoopkeeper和Kafka等。
+          - 上证券交所 负责参与上证微服务平台的建设, 内容涵盖服务治, 熔断, 配置中心, 服务监控, API 网关, 用户中心和消息中心等. 负责参与多个微服务中间件和容结合的高可用方案, Mysql, Redis, RabbitMQ, Zoopkeeper 和 Kafka 等
 
       - layout: left
         title: 麻袋理财
@@ -107,11 +107,11 @@ content:
         sub_title: 软件工程师
         caption: 2016/6 - 2017/3
         quote: >
-          麻袋财富致力于通过先进的信息技术手段和严格的风险控制体系，通过借贷信息撮合服务为借款人快速、专业地解决资金需求，为投资人提供高效的资金回报，努力打造专业的网络借贷信息中介服务平台。
+          麻袋财富致力于通过先进的信息技术手段和严格的风险控制体系, 通过借贷信息撮合服务为借款人快速, 专业地解决资金需求, 为投资人提供高效的资金回报, 努力打造专业的网络借贷信息中介服务平台
         description: | # this will include new lines to allow paragraphs
-          - 区块链征信系统 参与自研区块链平台，并在此平台基础上开发黑名单共享系统，容化部署，共四家公司接入，线上平稳运已有超过2年。
+          - 区块链征信系统 参与自研区块链平台, 并在此平台基础上开发黑名单共享系统, 容化部署, 共四家公司接入, 线上平稳运已有超过2年
 
-          - 客户中心项目 该项目主要负责对接各个业务系统，并以定时跑批的形式对客户信息进采集、初步分析和归档存储。同时以restful接口的形式对外，供其他业务系统消费及数据分析参与业务接口和单元测试的编码工作，深度实践TDD。
+          - 客户中心项目 该项目主要负责对接各个业务系统, 并以定时跑批的形式对客户信息进采集、初步分析和归档存储. 同时以restful接口的形式对外供其他业务系统消费及数据分析参与业务接口和单元测试的编码工作, 深度实践 TDD
 
   - title: Projects # Title for the section
     layout: list # Type of content section (list/text)
@@ -140,9 +140,9 @@ content:
         title: spring-boot-starter-swagger
         link: https://github.com/SpringForAll/spring-boot-starter-swagger
         quote: >
-          微服务小工具一枚, github 已有 1200+ star，300+ fork
+          微服务小工具一枚, github 已有 1200+ star, 300+ fork
         description: | # this will include new lines to allow paragraphs
-          该项目主要利用Spring Boot的自动化配置特性来实现快速的将swagger2引入spring boot应用来生成API文档，简化原生使用swagger2的整合代码。
+          该项目主要利用 Spring Boot 的自动化配置特性来实现快速的将swagger2引入spring boot应用来生成API文档, 简化原生使用 swagger2 的整合代码
 
   - title: Education # Title for the section
     layout: list # Type of content section (list/text)
@@ -152,13 +152,13 @@ content:
         caption: 2012.9 - 2016.7
         sub_title: 会计学 本科
         quote: >
-          湘潭大学（Xiangtan University），简称“湘大”，是毛泽东同志亲自倡办的综合性全国重点大学，是教育部和湖南省支持高水平大学和特色学科建设高校。
+          湘潭大学(Xiangtan University), 简称“湘大”, 是毛泽东同志亲自倡办的综合性全国重点大学, 是教育部和湖南省支持高水平大学和特色学科建设高校. 2022 年进入“双一流” 建设
         description: | # this will include new lines to allow paragraphs
 
   - title: A Little More About Me
     layout: text
     content: | # this will include new lines to allow paragraphs
-      - 熟悉编程语言 go、java 和 rust
+      - 熟悉编程语言 Go, Java 和 Rust
       - 熟悉掌握常用算法和数据结构
       - 热爱开源事业,较强的开源协作能力
       - 熟练的英语口语和书写能力
