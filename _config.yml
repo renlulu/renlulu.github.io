@@ -1,6 +1,6 @@
 # Site
 repository: sproogen/resume-theme
-# favicon: images/favicon.ico
+favicon: images/favicon.ico
 
 # Content configuration version
 version: 2
@@ -46,7 +46,7 @@ linkedin_username: renlulu
 
 # About Section
 # about_title: About Me
-about_profile_image: images/profile.jpg
+# about_profile_image: images/recommendation.png
 about_content: | # this will include new lines to allow paragraphs
    你好，我叫小火。我是一名软件工程师，主要方向是分布式系统和区块链。我在 2016年开始接触区块链技术，并为联盟链项目 R3 Corda 贡献代码和社区项目，成为其 contributor。此后主要精力投向公链技术，在公链项目 Zilliqa 的 grant 资助下，已完成并交付 Zilliqa go sdk 和 java sdk；并参与对接 Binance，OKEx，KuCoin 等多家交易所和钱包; 随后全职加入 Zilliqa; 同时，我也是《精通以太坊》（机械工业出版社 ISBN：9787111624929）的联合译者
 
@@ -120,19 +120,20 @@ content:
         title: Harmony Core Rosetta-API Extension
         link: https://github.com/harmony-one/bounties/issues/3
         quote: >
+          To scale trust and create a radically fair economy. Harmony is the first Proof-of-Stake & sharding mainnet. 2-second finality, trustless cross-chain liquidity.
 
         description: | # this will include new lines to allow paragraphs
-          - Implement balance tracking of staked ONE token for the Rosetta-API (details).
-          - Implement ALL staking transaction constructions for the Rosetta-API (details).
-          - Implement the /call endpoint for the Rosetta-API (details).
+          - Implement balance tracking of staked ONE token for the Rosetta-API.
+          - Implement ALL staking transaction constructions for the Rosetta-API.
+          - Implement the /call endpoint for the Rosetta-API.
 
       - layout: left
-        title: rosetta-sdk-go
+        title: Coinbase rosetta-sdk-go
         link: https://github.com/coinbase/rosetta-sdk-go
         quote: >
-
+          The rosetta-sdk-go provides a collection of packages used for interaction with the Rosetta API specification.
         description: | # this will include new lines to allow paragraphs
-          The rosetta-sdk-go provides a collection of packages used for interaction with the Rosetta API specification. Much of the code in this repository is generated from the rosetta-specifications repository.
+          Integrate Schnorr Algorithm.
 
 
       - layout: left
@@ -159,9 +160,14 @@ content:
     content: | # this will include new lines to allow paragraphs
       - 熟悉编程语言 go、java 和 rust
       - 熟悉掌握常用算法和数据结构
-      - 热爱开源事业
-      - 熟悉Spring、SpringBoot等微服务框架；熟悉 Netty 等 NIO 框架
-      - 熟练使用mysql、redis、kafka 等中间件以及在微服务架构中的应用
+      - 热爱开源事业,较强的开源协作能力
+      - 熟练的英语口语和书写能力
+
+      ![recommendation](images/recommendation.png)
+
+
+
+
 # Footer
 footer_show_references: true
 # references_title: References on request (Override references text)
