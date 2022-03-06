@@ -65,6 +65,7 @@ content:
           Zilliqa was launched in 2017 when our founders created a high-throughput public blockchain platform designed to scale thousands ​of transactions per second. As blockchain technology evolves, our efforts are centred around streamlining the efficiency, trust, and transparency of Web 3.0.
         description: | # this will include new lines to allow paragraphs
           - Non-custodial seed node staking (非托管节点质押协议):
+          
              - 负责协议的设计,合约实现以及日常运营; 现有机构节点 16 家, 协议最高管理资金量超过 10 亿美金
              
              - 协议设计 RFC: https://github.com/Zilliqa/ZIP/blob/master/zips/zip-11.md
@@ -74,6 +75,7 @@ content:
              - 项目主页: https://stake.zilliqa.com/
 
           - ZILBridge:
+          
              - 基于 polynetwork 的去中心化跨链桥协议, 目前已跨链项目 7 个, Incoming 总资产 4400 万美金, 实时数据见 https://zilstream.com/bridge
              
              - 负责 zilliqa relayer 的研发和维护: https://github.com/Zilliqa/zilliqa-relayer
@@ -85,6 +87,7 @@ content:
              - 项目主页: https://zilswap.io/bridge
 
           - 负责研发和维护 web3 sdk:
+          
              - https://github.com/Zilliqa/gozilliqa-sdk
              - https://github.com/Zilliqa/zilliqa-js
 
