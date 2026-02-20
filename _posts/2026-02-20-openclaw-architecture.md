@@ -1,9 +1,10 @@
 ---
-layout: default
 title: OpenClaw 架构详解
+date: 2026-02-20
+categories: [Architecture]
+tags: [openclaw, agent, nodejs]
+mermaid: true
 ---
-
-# OpenClaw 架构详解
 
 > 本文档基于 OpenClaw 源代码 (v2026.2.18) 逐文件分析编写，所有结论均有源码路径佐证。
 

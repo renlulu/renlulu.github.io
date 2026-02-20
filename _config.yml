@@ -1,3 +1,91 @@
-title: 小火的博客
-description: ""
-theme: jekyll-theme-cayman
+theme: jekyll-theme-chirpy
+
+lang: zh-CN
+timezone: Asia/Singapore
+
+title: 小火
+tagline: 软件工程师
+description: 小火的博客
+
+url: "https://renlulu.github.io"
+
+github:
+  username: renlulu
+
+twitter:
+  username: xiaohuo200
+
+social:
+  name: 小火
+  email: xiaohuo200@gmail.com
+  links:
+    - https://github.com/renlulu
+    - https://www.linkedin.com/in/renlulu
+
+theme_mode: light
+
+avatar: /images/profile.jpg
+
+toc: true
+
+paginate: 10
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: highlight
+    block:
+      line_numbers: true
+
+collections:
+  tabs:
+    output: true
+    sort_by: order
+
+defaults:
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: post
+      comments: false
+      toc: true
+      permalink: /posts/:title/
+  - scope:
+      path: _tabs
+      type: tabs
+    values:
+      layout: page
+      permalink: /:title/
+
+sass:
+  style: compressed
+
+compress_html:
+  clippings: all
+  comments: all
+  endings: all
+  profile: false
+  blanklines: false
+  ignore:
+    envs: [development]
+
+exclude:
+  - "*.gem"
+  - "*.gemspec"
+  - docs
+  - tools
+  - README.md
+  - LICENSE
+  - "*.config.js"
+  - package*.json
+
+jekyll-archives:
+  enabled: [categories, tags]
+  layouts:
+    category: category
+    tag: tag
+  permalinks:
+    tag: /tags/:name/
+    category: /categories/:name/

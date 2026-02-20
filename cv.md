@@ -1,6 +1,8 @@
 ---
-layout: default
+layout: page
 title: CV
+permalink: /cv/
+sitemap: false
 ---
 
 # 小火
