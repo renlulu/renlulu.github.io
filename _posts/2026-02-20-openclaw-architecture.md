@@ -30,53 +30,46 @@ OpenClaw 是一个多渠道 AI 智能体网关平台。核心定位是：**自�
 
 ```mermaid
 graph TB
-    subgraph Channels["用户接入层 (Channels)"]
+    subgraph Channels["用户接入层"]
         direction LR
-        WA[WhatsApp] ~~~ TG[Telegram] ~~~ DC[Discord] ~~~ SL[Slack]
-        IRC[IRC] ~~~ SIG[Signal] ~~~ IM[iMessage] ~~~ MORE[...]
+        WA[WhatsApp] ~~~ TG[Telegram] ~~~ DC[Discord] ~~~ SL[Slack] ~~~ MORE[30+ 渠道]
     end
 
-    subgraph Process["单一 Node.js 进程 (openclaw gateway)"]
-        subgraph Gateway["Gateway 层 (端口 18789)"]
-            direction LR
-            HTTP["HTTP Server<br/>(node:http)"]
-            WS["WebSocket<br/>(ws 库, JSON 协议 v3)"]
-            OAI["OpenAI 兼容端点<br/>/v1/responses<br/>/v1/chat/completions"]
-            AUTH["认证: token | password | trusted-proxy | device-pairing<br/>协议: req/res/event 帧, TypeBox + Ajv 验证"]
-        end
+    subgraph Process["单一 Node.js 进程"]
+        GW["<b>Gateway — IO 层</b> (端口 18789)<br/>HTTP · WebSocket · OpenAI 兼容 API<br/>认证 · 协议路由 · 渠道适配"]
 
-        subgraph Agent["Agent 系统"]
-            RUNNER["<b>pi-embedded-runner</b><br/>1. 队列调度 → 2. 工作区解析 → 3. Hook 执行<br/>4. 模型解析 → 5. 上下文窗口检查 → 6. 认证 Profile<br/>7. 会话加载 → 8. 工具组装 → 9. System Prompt<br/>10. LLM 调用 → 11. 工具循环 → 12. 压缩 → 13. Failover"]
-            DEFAULTS["默认: anthropic / claude-opus-4-6 / 200K tokens"]
-        end
+        HOOKS["<b>插件 Hook 链</b><br/>18 个生命周期节点 (message_received → ... → message_sending)<br/>观察与干预: 审计 · 安全过滤 · 动态配置"]
+
+        AGENT["<b>Agent — 执行层</b> (pi-embedded-runner)<br/>准备 → 工具循环 → 异常处理 (压缩 · failover)"]
     end
 
-    subgraph Providers["Provider 层"]
-        direction TB
-        P1[Anthropic] ~~~ P2[OpenAI] ~~~ P3[Google]
-        P4[Bedrock] ~~~ P5[Ollama] ~~~ P6[15+ 其他]
+    subgraph Providers["LLM Provider"]
+        direction LR
+        P1[Anthropic] ~~~ P2[OpenAI] ~~~ P3[Google] ~~~ P4[Bedrock] ~~~ P5[15+ 其他]
     end
 
     subgraph Tools["工具系统"]
-        direction TB
-        T1["read | write | edit | exec | browser"]
-        T2["web_search | web_fetch | memory_search"]
-        T3["canvas | cron | message | tts"]
-        T4["沙箱: Docker 容器隔离 (可选)<br/>审批: exec-approvals.json"]
+        subgraph ExtTools["外部交互"]
+            direction LR
+            E1["exec · process<br/>(系统命令)"] ~~~ E2["browser<br/>(浏览器控制)"] ~~~ E3["web_search · web_fetch<br/>(网络访问)"]
+        end
+        subgraph IntTools["文件与存储"]
+            direction LR
+            I1["read · write · edit<br/>(文件操作)"] ~~~ I2["memory_search · memory_get<br/>(记忆检索)"] ~~~ I3["message · cron · canvas<br/>(扩展能力)"]
+        end
     end
 
-    subgraph Storage["存储层"]
-        S1["会话: JSONL 文件"]
-        S2["配置: openclaw.json + models.json + auth.json"]
-        S3["记忆: SQLite + sqlite-vec 向量搜索"]
-        S4["⚠️ 无 Redis、无 PostgreSQL、无 S3<br/>所有数据存储在本地文件系统"]
+    subgraph Storage["本地存储 (⚠️ 无外部数据库)"]
+        direction LR
+        S1["会话: JSONL"] ~~~ S2["配置: JSON"] ~~~ S3["记忆: SQLite<br/>(sqlite-vec + FTS5)"]
     end
 
-    Channels -->|"消息推送 / WebSocket / HTTP Webhook"| Gateway
-    Gateway --> Agent
-    Agent --> Providers
-    Agent --> Tools
-    Tools --> Storage
+    Channels <-->|"消息收发 (Webhook · Bot API · WebSocket)"| GW
+    GW --> HOOKS --> AGENT
+    AGENT -->|"LLM 调用 (流式)"| Providers
+    AGENT --> Tools
+    IntTools --> Storage
+    AGENT -.->|"直接读写会话"| S1
 ```
 
 ## 启动流程
