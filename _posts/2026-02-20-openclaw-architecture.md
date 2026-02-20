@@ -244,26 +244,38 @@ OpenClaw 的 Agent 不是简单的聊天机器人，而是能**自主完成编�
 
 源码: `src/config/types.agents.ts`
 
-Agent 在 `openclaw.json` 的 `agents.list` 数组中定义：
+OpenClaw 支持在同一个实例中运行多个 Agent，每个 Agent 有独立的模型、工具、工作区配置。所有 Agent 在 `openclaw.json` 的 `agents.list` 数组中定义。
 
-```typescript
-type AgentConfig = {
-  id: string;                  // 唯一标识符
-  default?: boolean;           // 是否默认 Agent
-  name?: string;
-  workspace?: string;          // 工作目录
-  agentDir?: string;           // Agent 数据目录
-  model?: string | {           // 模型配置
-    primary?: string;          //   "provider/model" 格式
-    fallbacks?: string[];      //   备选模型列表
-  };
-  skills?: string[];           // 技能白名单
-  sandbox?: SandboxConfig;     // 沙箱配置
-  tools?: ToolsConfig;         // 工具配置
-  identity?: { name, emoji };  // 显示身份
-  subagents?: SubagentConfig;  // 子 Agent 配置
-};
+一个典型的 Agent 配置：
+
+```json
+{
+  "id": "coder",
+  "name": "编码助手",
+  "default": true,
+  "workspace": "/home/user/projects",
+  "model": {
+    "primary": "anthropic/claude-opus-4-6",
+    "fallbacks": ["openai/gpt-4o"]
+  },
+  "tools": {
+    "deny": ["web_search"]
+  },
+  "identity": { "name": "Coder", "emoji": "🤖" }
+}
 ```
+
+各字段和前面提到的执行流程的关系：
+
+| 字段 | 对应的执行阶段 | 说明 |
+|------|---------------|------|
+| `workspace` | 阶段一：解析工作区 | Agent 的工作目录，工具循环中 read/write/exec 都在这个目录下执行 |
+| `model.primary` / `fallbacks` | 阶段一：解析模型 + 异常处理：模型 failover | 主模型不可用时自动切换到备选模型 |
+| `tools` | 阶段二：组装工具 | 控制哪些工具可用（`allow`/`deny` 列表） |
+| `skills` | 阶段二：构建 System Prompt | 技能白名单，决定哪些能力注入 System Prompt |
+| `sandbox` | 阶段二：组装工具 | 是否在 Docker 容器中执行 exec 工具 |
+| `identity` | 阶段二：构建 System Prompt | Agent 的名字和头像，注入 System Prompt 中 |
+| `subagents` | — | 子 Agent 配置，允许 Agent 调用其他 Agent |
 
 ## Provider 系统
 
