@@ -765,23 +765,6 @@ packages:
 | macOS | `apps/macos/` | Swift Package (Menu Bar) |
 | Android | `apps/android/` | Gradle |
 
-## 与原文档的勘误
-
-| # | 原文档描述 | 实际情况 |
-|---|-----------|---------|
-| 1 | Gateway 使用 Express | **错误**。Gateway 使用 Node.js 原生 `http`/`https`。Express 仅用于 `/v1/responses` 和 `/v1/chat/completions` 兼容端点 |
-| 2 | WhatsApp 使用 Meta Business API | **错误**。使用 `@whiskeysockets/baileys` (Web 协议逆向实现) |
-| 3 | 存储层使用 Redis、PostgreSQL | **错误**。OpenClaw 不使用 Redis 和 PostgreSQL。所有存储基于文件系统 + SQLite |
-| 4 | 存储层使用 S3/CDN | **错误**。没有 S3/CDN 集成 |
-| 5 | 工具名为 `read_file`, `write_file` | **不准确**。实际工具名为 `read`, `write`, `edit`, `exec` |
-| 6 | 提到 "Message Queue" 消息队列 | **错误**。OpenClaw 不使用消息队列 |
-| 7 | 安全架构提到 "RBAC + ACL" | **不准确**。认证是 token/password/device-pairing 模式 |
-| 8 | 安全架构提到 "AES-256 加密存储" | **错误**。没有 AES 加密存储 |
-| 9 | 提到 "40+ Extensions" | **不准确**。实际 31 个扩展 |
-| 10 | 核心模块图提到 "Redis/etcd 分布式锁" | **错误**。OpenClaw 使用文件锁 (`proper-lockfile`) |
-| 11 | 默认端口 8080 | **错误**。默认端口 18789。Cloud Claw 的 entrypoint.sh 通过 `--port 8080` 覆盖 |
-| 12 | Discord 使用 Bot/Webhook | **部分正确**。实际使用 `discord-api-types` 原生 REST API，不使用 discord.js |
-
 ## 关键源码路径索引
 
 | 模块 | 路径 | 说明 |
