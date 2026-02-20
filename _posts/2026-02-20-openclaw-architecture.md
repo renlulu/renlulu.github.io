@@ -359,6 +359,39 @@ OpenClaw 内置了 15+ 个 Provider（源码: `src/agents/models-config.provider
 
 渠道系统是 OpenClaw 的"最后一公里"——把 Agent 的能力通过各种即时通讯平台交付给用户。你在 Telegram 给 Bot 发一条消息，渠道系统把它收进来交给 Gateway，Agent 处理完后渠道系统再把结果发回 Telegram。
 
+### 一条消息的完整旅程
+
+以 Telegram 为例，用户给 Bot 发了一条"帮我看看 nginx 的状态"：
+
+```
+用户在 Telegram 发送消息
+      ↓
+Telegram 服务器推送 Webhook → Gateway HTTP 端点
+      ↓
+Telegram 插件 (gateway 适配器) 接收并解析
+  - 从 Webhook payload 中提取 chat_id、message_id、消息文本
+  - 判断消息类型：私聊还是群组？文本还是图片/文件？
+  - 转换为 OpenClaw 统一消息格式（与平台无关）
+      ↓
+根据 session key 路由到 Agent
+  - key: "agent:coder:telegram:dm:123456"
+  - 从 key 中提取 Agent ID、渠道、聊天类型
+  - 找到或创建对应的会话文件
+      ↓
+pi-embedded-runner 启动工具循环
+  - LLM 思考 → 调用 exec("systemctl status nginx")
+  - 拿到输出 → 生成人类可读的回复
+      ↓
+Telegram 插件 (outbound 适配器) 发送回复
+  - Markdown → Telegram MarkdownV2 格式转换
+  - 超长消息自动分片（Telegram 限制 4096 字符）
+  - 如果有图片或文件，作为媒体消息单独发送
+      ↓
+用户在 Telegram 看到 Agent 的回复
+```
+
+这条链路中，**渠道插件承担了两端的"翻译"工作**——入站时把 Telegram 的 Webhook 格式翻译成统一消息，出站时把 Agent 的回复翻译回 Telegram 格式。Gateway 和 Agent 完全不知道消息来自 Telegram 还是 Discord，这就是为什么 30+ 渠道可以共享同一套 Agent 逻辑。
+
 ### 两级架构
 
 OpenClaw 把渠道分成两级：
@@ -471,7 +504,32 @@ graph LR
     end
 ```
 
-比如 `before_agent_start` Hook 可以在 Agent 开始执行前注入额外的上下文（这就是 pi-embedded-runner 阶段二中"Hook 执行"步骤做的事情）。
+用前面 Telegram 的例子来看 Hook 在实际链路中的位置。用户发了"帮我看看 nginx 的状态"，消息进入 Agent 后：
+
+```
+message_received Hook 触发
+  → 插件可以在这里做内容过滤、记录审计日志
+        ↓
+before_model_resolve Hook 触发
+  → 插件可以根据用户身份切换模型（VIP 用户用 Claude，普通用户用本地模型）
+        ↓
+before_agent_start Hook 触发
+  → 插件注入额外上下文："这台服务器是生产环境，只允许只读操作"
+        ↓
+工具循环开始
+  before_tool_call Hook 触发（每次工具调用前）
+    → 插件检查: exec("systemctl status nginx") — 只读命令，放行
+    → 如果是 exec("rm -rf /") — 拦截，返回错误
+  after_tool_call Hook 触发（每次工具调用后）
+    → 插件记录工具执行结果，用于计费或审计
+        ↓
+message_sending Hook 触发
+  → 插件扫描回复内容，过滤掉意外泄露的密钥或密码
+        ↓
+回复发送给用户
+```
+
+**Hook 不改变执行流程本身**，而是在关键节点提供"观察和干预"的机会。这让插件开发者可以在不修改 Agent 核心逻辑的情况下，实现审计、安全过滤、动态配置等横切关注点。
 
 ## 项目结构
 
