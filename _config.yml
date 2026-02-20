@@ -9,18 +9,8 @@ description: 小火的博客
 
 url: "https://renlulu.github.io"
 
-github:
-  username: renlulu
-
-twitter:
-  username: xiaohuo200
-
 social:
   name: 小火
-  email: xiaohuo200@gmail.com
-  links:
-    - https://github.com/renlulu
-    - https://www.linkedin.com/in/renlulu
 
 theme_mode: light
 
