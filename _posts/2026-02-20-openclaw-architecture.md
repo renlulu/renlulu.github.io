@@ -279,541 +279,213 @@ OpenClaw 支持在同一个实例中运行多个 Agent，每个 Agent 有独立�
 
 ## Provider 系统
 
-### 支持的 API 协议
+Agent 系统在执行阶段需要调用 LLM，但不同厂商的 API 格式完全不同——Anthropic 用 Messages API，OpenAI 用 Completions/Responses API，Google 用 Generative AI API，还有各种 OpenAI 兼容的国产模型。Provider 系统的作用就是**屏蔽这些差异**，让 Agent 不需要关心底层用的是哪家模型。
 
-源码: `src/config/types.models.ts`
+### 工作方式
 
-```typescript
-type ModelApi =
-  | "openai-completions"
-  | "openai-responses"
-  | "anthropic-messages"
-  | "google-generative-ai"
-  | "github-copilot"
-  | "bedrock-converse-stream"
-  | "ollama";
-```
+每个 Provider 由三部分组成：
 
-### 支持的 Provider 列表
+- **API 协议** — 7 种：`anthropic-messages`、`openai-completions`、`openai-responses`、`google-generative-ai`、`github-copilot`、`bedrock-converse-stream`、`ollama`
+- **连接信息** — baseUrl、apiKey、认证方式、自定义 headers
+- **模型列表** — 每个模型的 ID、上下文窗口大小、是否支持推理、输入类型（文本/图片）、费用
 
-源码: `src/agents/models-config.providers.ts`
+Agent 配置中的 `model: "anthropic/claude-opus-4-6"` 中，`anthropic` 是 Provider ID，`claude-opus-4-6` 是模型 ID。执行阶段的"解析模型"步骤就是根据这个格式找到对应的 Provider 和模型配置。
 
-| Provider | Base URL | API 类型 |
-|----------|----------|----------|
-| **Anthropic** | (内置) | `anthropic-messages` |
-| **OpenAI** | (内置) | `openai-completions` / `openai-responses` |
-| **OpenAI Codex** | (内置) | (单独 provider ID) |
-| **Google Gemini** | Google Generative AI | `google-generative-ai` |
-| **GitHub Copilot** | `api.individual.githubcopilot.com` | `openai-responses` |
-| **Amazon Bedrock** | AWS | `bedrock-converse-stream` |
-| **Ollama** | `127.0.0.1:11434` | `ollama` (本地模型发现) |
-| **vLLM** | `127.0.0.1:8000/v1` | OpenAI 兼容 |
-| **MiniMax** | `api.minimax.io/anthropic` | Anthropic 兼容 |
-| **Xiaomi Mimo** | `api.xiaomimimo.com/anthropic` | Anthropic 兼容 |
-| **Moonshot Kimi** | `api.moonshot.ai/v1` | OpenAI 兼容 |
-| **Qwen Portal** | `portal.qwen.ai/v1` | OAuth + `openai-responses` |
-| **Baidu Qianfan** | `qianfan.baidubce.com/v2` | OpenAI 兼容 |
-| **NVIDIA** | `integrate.api.nvidia.com/v1` | OpenAI 兼容 |
-| **HuggingFace** | HF Inference API | 自动发现 |
-| **Together AI** | Together API | 自动发现 |
+### 内置 Provider
 
-### 模型配置
+OpenClaw 内置了 15+ 个 Provider（源码: `src/agents/models-config.providers.ts`）：
 
-源码: `src/config/types.models.ts`
+| Provider | API 协议 | 说明 |
+|----------|----------|------|
+| Anthropic | `anthropic-messages` | Claude 系列 |
+| OpenAI | `openai-completions` / `openai-responses` | GPT 系列 |
+| Google Gemini | `google-generative-ai` | Gemini 系列 |
+| GitHub Copilot | `openai-responses` | 通过 Copilot 订阅使用 |
+| Amazon Bedrock | `bedrock-converse-stream` | AWS 托管模型 |
+| Ollama | `ollama` | 本地模型，自动发现 |
+| MiniMax、小米 Mimo | Anthropic 兼容 | 国产模型 |
+| Moonshot Kimi、通义千问、百度千帆 | OpenAI 兼容 | 国产模型 |
+| vLLM、NVIDIA、HuggingFace、Together AI | OpenAI 兼容 | 推理服务 |
 
-```typescript
-type ModelProviderConfig = {
-  baseUrl: string;
-  apiKey?: string;
-  auth?: "api-key" | "aws-sdk" | "oauth" | "token";
-  api?: ModelApi;
-  headers?: Record<string, string>;
-  models: ModelDefinitionConfig[];
-};
-
-type ModelDefinitionConfig = {
-  id: string;
-  name: string;
-  reasoning: boolean;
-  input: Array<"text" | "image">;
-  cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  contextWindow: number;
-  maxTokens: number;
-};
-```
-
-模型配置存储在 Agent 目录下的 `models.json` 文件中，由 `ensureOpenClawModelsJson()` 生成。
+大部分国产模型和推理服务都走 OpenAI 兼容协议，只需要改 baseUrl 和 apiKey 就能接入。
 
 ## 工具系统
 
-### 工具分类
+前面讲工具循环时提到，Agent 的能力完全取决于它有哪些工具。工具系统决定了 Agent 能"做"什么——读写文件、执行命令、控制浏览器、搜索网页、发送消息等。
 
-源码: `src/agents/openclaw-tools.ts`, `src/agents/bash-tools.exec.ts`
+### 三类工具
 
-**A. 编码/文件工具** (来自 `@mariozechner/pi-coding-agent`):
+**编码工具**（来自 pi 库）— Agent 作为编码助手的核心能力：
 
-| 工具名 | 功能 |
-|--------|------|
-| `read` | 读取文件 |
-| `write` | 写入文件 |
-| `edit` | 编辑文件 |
-| `apply_patch` | 应用补丁（部分模型支持）|
+| 工具 | 作用 |
+|------|------|
+| `read` | 读取文件内容 |
+| `write` | 写入/创建文件 |
+| `edit` | 编辑文件的特定部分 |
+| `exec` | 执行 Shell 命令（支持 PTY） |
+| `process` | 后台进程管理（发送按键、轮询输出） |
 
-**B. 执行工具**:
+**OpenClaw 扩展工具** — 在编码之外的额外能力：
 
-| 工具名 | 功能 |
-|--------|------|
-| `exec` | 执行 Shell 命令 (PTY 支持, 沙箱支持) |
-| `process` | 后台进程管理 (send-keys, poll) |
+| 工具 | 作用 |
+|------|------|
+| `browser` | 控制浏览器（CDP 协议 / Playwright） |
+| `web_search` | 网页搜索（Brave / Perplexity / Grok 后端） |
+| `web_fetch` | 抓取 URL 内容（HTML → Markdown） |
+| `message` | 发送消息到即时通讯渠道 |
+| `memory_search` | 搜索长期记忆 |
+| `cron` | 创建定时任务 |
+| `sessions_spawn` | 启动子 Agent 会话 |
+| `canvas`、`tts`、`image` | 画布、语音、图片生成 |
 
-**C. OpenClaw 特有工具**:
+**渠道工具** — 由各渠道插件注入的特定工具（如 Telegram 的 sticker 发送）。
 
-| 工具名 | 功能 |
-|--------|------|
-| `browser` | 浏览器控制 (CDP 协议, Playwright) |
-| `canvas` | 画布工具 |
-| `cron` | 定时任务创建 |
-| `message` | 发送消息到渠道 (Telegram, Discord, Slack 等) |
-| `tts` | 文字转语音 |
-| `web_search` | 网页搜索 (Brave/Perplexity/Grok 后端) |
-| `web_fetch` | URL 抓取 (HTML→Markdown) |
-| `image` | 图片生成/处理 |
-| `memory_search` | 记忆搜索 |
-| `memory_get` | 记忆获取 |
-| `agents_list` | 列出 Agent |
-| `sessions_list` | 列出会话 |
-| `sessions_spawn` | 创建子 Agent 会话 |
-| `session_status` | 会话状态 |
+### 安全控制
 
-### 工具审批系统
+让 LLM 执行 Shell 命令是危险的。OpenClaw 通过三层机制控制工具的使用：
 
-源码: `src/agents/bash-tools.exec.ts`
+**1. 执行审批**（`exec-approvals.json`）— 控制 `exec` 工具的安全级别：
+- `deny` — 禁止执行任何命令（默认）
+- `safe-only` — 仅允许白名单命令
+- `full` — 允许所有命令
 
-`exec` 工具有三级安全模式：
+在非交互场景（如 Telegram Bot）中，通常配置 `security: "full", ask: "off"` 来自动批准所有命令。
 
-| Security 级别 | 说明 |
-|---------------|------|
-| `deny` | 禁止所有执行 (默认) |
-| `safe-only` | 仅允许白名单命令 |
-| `full` | 允许所有命令 |
+**2. 工具策略管道**（`tool-policy-pipeline.ts`）— 多层级的 `allow`/`deny` 列表，从全局到 Agent 到群组到子 Agent，逐级细化控制。
 
-审批配置文件: `exec-approvals.json`
-
-```json
-{
-  "security": "full",
-  "ask": "off"
-}
-```
-
-`ask` 控制是否需要用户确认: `on` (每次确认) | `off` (自动批准)
-
-### 工具策略管道
-
-源码: `src/agents/pi-tools.policy.ts`, `tool-policy-pipeline.ts`
-
-支持多层级的 `allow`/`deny` 列表：全局级、Agent 级、Group 级、子 Agent 级、沙箱级。
-
-### Docker 沙箱
-
-源码: `src/agents/sandbox/`
-
-可选的 Docker 容器隔离执行环境：
-
-```typescript
-type SandboxConfig = {
-  mode: "off" | "non-main" | "all";
-  scope: "session" | "agent" | "shared";
-  workspaceAccess: "none" | "ro" | "rw";
-  docker: {
-    image: "openclaw-sandbox:bookworm-slim";
-    workDir: "/workspace";
-    readOnly: true;          // 只读根文件系统
-    network: "none";         // 默认无网络
-    capDrop: ["ALL"];        // 丢弃所有 capabilities
-    tmpfs: ["/tmp", "/var/tmp", "/run"];
-  };
-};
-```
-
-容器通过 `child_process.spawn("docker", args)` 管理，支持自动回收（默认 24h 空闲, 7 天最大存活）。
+**3. Docker 沙箱**（`src/agents/sandbox/`）— 可选的容器隔离。开启后 `exec` 在 Docker 容器内执行，容器默认只读文件系统、无网络、丢弃所有 Linux capabilities。适合运行不受信任的代码。
 
 ## 渠道系统
 
-### 渠道架构
+渠道系统是 OpenClaw 的"最后一公里"——把 Agent 的能力通过各种即时通讯平台交付给用户。你在 Telegram 给 Bot 发一条消息，渠道系统把它收进来交给 Gateway，Agent 处理完后渠道系统再把结果发回 Telegram。
 
-源码: `src/channels/`, `src/channels/plugins/types.plugin.ts`
+### 两级架构
 
-OpenClaw 有两级渠道系统：
+OpenClaw 把渠道分成两级：
 
-**核心渠道** (内置在 `src/` 中, 源码: `src/channels/registry.ts`):
+**核心渠道**（8 个，内置在 `src/channels/`）：
 
-| 渠道 | ID | 库依赖 | 协议 |
-|------|-----|--------|------|
-| WhatsApp | `whatsapp` | `@whiskeysockets/baileys` 7.0.0-rc.9 | Web 协议逆向 (非 Business API) |
-| Telegram | `telegram` | `grammy` ^1.40.0 | Bot API |
-| Discord | `discord` | `discord-api-types` (原生 REST, 无 discord.js) | Bot API |
-| Slack | `slack` | `@slack/bolt` ^4.6.0 | Socket Mode |
-| IRC | `irc` | 无第三方依赖 (原生 `node:net`/`node:tls`) | 自实现 IRC 协议解析 |
-| Signal | `signal` | signal-cli (外部二进制) | JSON-RPC 到 signal-cli daemon |
-| iMessage | `imessage` | 自定义 (macOS 原生) | macOS Bridge |
-| Google Chat | `googlechat` | `google-auth-library` | HTTP Webhook |
+| 渠道 | 协议 | 值得注意的点 |
+|------|------|-------------|
+| WhatsApp | Web 协议逆向（baileys） | 不是 Meta Business API，而是逆向 Web 端协议 |
+| Telegram | Bot API（grammy） | |
+| Discord | 原生 REST API | 没用 discord.js，用的是底层 `discord-api-types` |
+| Slack | Socket Mode（bolt） | |
+| IRC | 自实现协议解析 | 没用任何第三方库，直接用 `node:net` |
+| Signal | signal-cli 外部进程 | 通过 JSON-RPC 与 signal-cli daemon 通信 |
+| iMessage | macOS 原生 Bridge | 仅限 macOS |
+| Google Chat | HTTP Webhook | |
 
-默认渠道: `whatsapp`
-
-**扩展渠道** (在 `extensions/` 目录, 通过插件系统加载):
-
-| 扩展 | ID | 库依赖 |
-|------|-----|--------|
-| BlueBubbles | `bluebubbles` | REST API 到 BlueBubbles macOS 应用 |
-| Feishu/Lark | `feishu` | `@larksuiteoapi/node-sdk` |
-| LINE | `line` | `@line/bot-sdk` |
-| Matrix | `matrix` | `@vector-im/matrix-bot-sdk` |
-| Mattermost | `mattermost` | 自实现 |
-| MS Teams | `msteams` | `@microsoft/agents-hosting` |
-| Nextcloud Talk | `nextcloud-talk` | 自实现 |
-| Nostr | `nostr` | `nostr-tools` (NIP-04 加密 DM) |
-| Tlon/Urbit | `tlon` | `@urbit/aura` |
-| Twitch | `twitch` | `@twurple/*` |
-| Zalo | `zalo` | `undici` (HTTP) |
+**扩展渠道**（11 个，在 `extensions/` 目录）：飞书、LINE、Matrix、MS Teams、Mattermost、Twitch、Nostr 等。通过插件系统加载，和核心渠道有完全相同的能力。
 
 ### 渠道插件接口
 
-源码: `src/channels/plugins/types.plugin.ts`
+每个渠道都实现统一的 `ChannelPlugin` 接口，通过适配器模式把不同平台的差异封装起来：
 
-每个渠道实现 `ChannelPlugin` 接口：
+- **gateway 适配器** — 启动/停止连接、登录/登出
+- **outbound 适配器** — 发送消息（文本、图片、文件等）
+- **security 适配器** — 控制谁能给 Agent 发消息
+- **capabilities 声明** — 告诉系统这个渠道支持什么（群组、回复、编辑、媒体、线程等）
 
-```typescript
-type ChannelPlugin = {
-  id: ChannelId;
-  meta: ChannelMeta;                     // 标签、简介、文档路径
-  capabilities: ChannelCapabilities;      // 支持的功能声明
-  config: ChannelConfigAdapter;           // 账号管理
-  gateway?: ChannelGatewayAdapter;        // 启动/停止/登录/登出
-  outbound?: ChannelOutboundAdapter;      // 消息发送
-  security?: ChannelSecurityAdapter;      // DM 策略
-  groups?: ChannelGroupAdapter;           // 群组
-  pairing?: ChannelPairingAdapter;        // 用户配对
-  heartbeat?: ChannelHeartbeatAdapter;    // 心跳就绪检查
-  agentTools?: ChannelAgentToolFactory;   // 渠道专属工具
-  // ... 更多适配器
-};
-```
-
-**渠道能力声明** (`ChannelCapabilities`):
-
-```typescript
-type ChannelCapabilities = {
-  chatTypes: Array<"direct" | "group" | "channel" | "thread">;
-  polls?: boolean;
-  reactions?: boolean;
-  edit?: boolean;
-  unsend?: boolean;
-  reply?: boolean;
-  media?: boolean;
-  threads?: boolean;
-  blockStreaming?: boolean;
-};
-```
-
-### 扩展注册机制
-
-扩展通过 `package.json` 声明：
-
-```json
-{
-  "openclaw": {
-    "extensions": ["./index.ts"],
-    "channel": {
-      "id": "googlechat",
-      "label": "Google Chat",
-      "aliases": ["gchat", "google-chat"],
-      "order": 55
-    }
-  }
-}
-```
-
-入口文件导出 `OpenClawPluginDefinition`，通过 `register(api)` 方法注册：
-
-```typescript
-api.registerChannel({ plugin: myChannelPlugin });
-api.registerTool(myTool);
-api.registerHook("message_received", handler);
-```
+这意味着接入一个新渠道，只需要实现这些适配器，不需要改 Agent 或 Gateway 的任何代码。
 
 ## 记忆系统
 
-### 记忆源
+工具循环中，LLM 的上下文窗口是有限的（比如 200K tokens）。如果 Agent 需要回忆几天前的对话内容，或者参考用户写的备忘录，就需要记忆系统。
 
-源码: `src/memory/`
+记忆系统的作用是：**把大量的历史信息（对话记录、用户笔记）索引起来，在需要时搜索出最相关的片段注入 LLM 的上下文**。
 
-OpenClaw 的记忆系统有两种数据源 (`MemorySource`):
+### 数据来源
 
-1. **`memory`** — Markdown 文件
-   - `MEMORY.md` (Agent 工作区根目录)
-   - `memory/*.md` (递归扫描)
-   - 可配置额外路径 (`extraPaths`)
+- **Markdown 文件** — 用户在工作区写的 `MEMORY.md` 和 `memory/*.md` 文件，可以理解为 Agent 的"笔记本"
+- **会话记录** — 历史对话的 JSONL 文件，自动提取对话文本
 
-2. **`sessions`** — 会话记录 (JSONL 文件)
-   - 每行一个 JSON 对象 (header, user message, assistant message, tool call)
-   - 自动提取 `User: ...` / `Assistant: ...` 文本用于嵌入
+### 索引和搜索
 
-### 索引存储
+记忆内容被切成文本块（chunks），每个块生成嵌入向量，存入 SQLite + sqlite-vec 向量数据库。搜索时使用**混合搜索**：
 
-源码: `src/memory/memory-schema.ts`
+- **向量搜索**（余弦相似度）— 找语义相关的内容，权重 70%
+- **关键词搜索**（FTS5 全文索引）— 找精确匹配的关键词，权重 30%
+- **MMR 去重** — 避免返回重复的结果
+- **时间衰减** — 越新的记忆权重越高（默认 30 天半衰期）
 
-使用 **Node.js 内置 `node:sqlite`** (实验性 `DatabaseSync`) + **`sqlite-vec`** (v0.1.7-alpha.2) 向量扩展。
+嵌入向量可以用 OpenAI、Google、Voyage 的 API 生成，也可以用本地的 `node-llama-cpp` 离线生成。
 
-**数据库 Schema：**
-
-```sql
--- 已索引文件跟踪
-CREATE TABLE files (
-  path TEXT PRIMARY KEY,
-  source TEXT NOT NULL DEFAULT 'memory',  -- 'memory' 或 'sessions'
-  hash TEXT NOT NULL,
-  mtime INTEGER NOT NULL,
-  size INTEGER NOT NULL
-);
-
--- 文本块 + 嵌入向量
-CREATE TABLE chunks (
-  id TEXT PRIMARY KEY,
-  path TEXT NOT NULL,
-  source TEXT NOT NULL DEFAULT 'memory',
-  start_line INTEGER NOT NULL,
-  end_line INTEGER NOT NULL,
-  hash TEXT NOT NULL,
-  model TEXT NOT NULL,
-  text TEXT NOT NULL,
-  embedding TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
--- FTS5 全文搜索索引
-CREATE VIRTUAL TABLE chunks_fts USING fts5(text, id UNINDEXED, path UNINDEXED, ...);
-
--- sqlite-vec 向量搜索索引
--- chunks_vec 虚拟表 (近似最近邻搜索)
-
--- 嵌入缓存 (避免重复计算)
-CREATE TABLE embedding_cache (
-  provider TEXT NOT NULL,
-  model TEXT NOT NULL,
-  hash TEXT NOT NULL,
-  embedding TEXT NOT NULL,
-  dims INTEGER,
-  PRIMARY KEY (provider, model, provider_key, hash)
-);
-```
-
-### 搜索策略
-
-源码: `src/memory/manager.ts`
-
-**混合搜索** (Hybrid Search):
-- 向量搜索 (cosine similarity) + BM25 关键词搜索 (FTS5)
-- 权重: 0.7 向量 / 0.3 关键词 (可配置)
-- MMR (Maximal Marginal Relevance) 去重
-- 时间衰减 (可配置半衰期, 默认 30 天)
-
-**支持的嵌入 Provider：**
-
-| Provider | 模型 |
-|----------|------|
-| OpenAI | `text-embedding-3-small` |
-| Google | `gemini-embedding-001` |
-| Voyage | `voyage-4-large` |
-| 本地 | `node-llama-cpp` (可选 peer dep) |
-
-另有 `QmdMemoryManager` 后端，使用外部 `qmd` 二进制进行 queryable markdown 搜索。
-
-### MemorySearchManager 接口
-
-源码: `src/memory/types.ts`
-
-```typescript
-interface MemorySearchManager {
-  search(query: string, opts?: {
-    maxResults?: number;
-    minScore?: number;
-    sessionKey?: string;
-  }): Promise<MemorySearchResult[]>;
-  readFile(params: { relPath: string; from?: number; lines?: number }): Promise<{ text: string; path: string }>;
-  status(): MemoryProviderStatus;
-  sync?(params?: { reason?: string; force?: boolean }): Promise<void>;
-  probeEmbeddingAvailability(): Promise<MemoryEmbeddingProbeResult>;
-  close?(): Promise<void>;
-}
-```
+值得注意的是，整个记忆系统**不依赖任何外部数据库**——全部基于 Node.js 内置的 `node:sqlite` 模块和本地文件系统。
 
 ## 会话管理
 
-### 存储格式
+每次用户和 Agent 的对话都是一个会话（session）。会话管理解决的是：**如何持久化对话历史，让 Agent 能在下次对话时恢复上下文**。
 
-源码: `src/config/sessions.ts`
+- **会话索引** — 一个 JSON 文件，记录所有会话的元数据（`sessions.json`）
+- **会话记录** — 每个会话一个 JSONL 文件，每行是一条消息（用户消息、Agent 回复、工具调用结果等）
+- **会话键** — 唯一标识一个对话线程，格式如 `"agent:coder:telegram:dm:123"`，从中可以提取 Agent ID、渠道、聊天类型等信息
 
-**会话存储** (Session Store): JSON 文件
-- 路径: `{STATE_DIR}/agents/{agentId}/sessions/sessions.json`
-- 内容: `Record<string, SessionEntry>` (会话键 → 元数据)
-- 内存缓存: 45 秒 TTL
-- 写入: 锁队列防止并发损坏
+会话文件的读写通过锁队列保护，这也是 `pi-embedded-runner` 阶段一中"排队"步骤存在的原因——避免并发写入损坏会话文件。
 
-**会话记录** (Session Transcript): JSONL 文件
-- 路径: `{STATE_DIR}/agents/{agentId}/sessions/{sessionId}.jsonl`
-- 每行一个 JSON 对象: header, user message, assistant message, tool call/result
-- 支持自动修复损坏的 JSONL 文件
+## 定时任务
 
-### 会话键
+Agent 不一定要等用户发消息才能行动。通过定时任务（Cron），Agent 可以按计划自动执行任务——比如每天早上汇总新闻、每小时检查服务器状态、在指定时间发送提醒。
 
-会话键标识一个对话线程，格式如: `"default"`, `"agent:myagent:telegram:dm:123"`
+三种调度方式：
 
-从会话键可以提取: agentId, channel, chatType, chatId
+- **一次性**（`at`）— 在指定时间点执行一次
+- **周期性**（`every`）— 每隔固定时间执行
+- **Cron 表达式**（`cron`）— 标准 Cron 语法，支持时区
 
-## Cron / 定时任务系统
-
-源码: `src/cron/`
-
-### CronJob 结构
-
-```typescript
-type CronJob = {
-  id: string;
-  agentId?: string;
-  name: string;
-  enabled: boolean;
-  schedule: CronSchedule;
-  sessionTarget: "main" | "isolated";
-  wakeMode: "next-heartbeat" | "now";
-  payload: CronPayload;
-  delivery?: CronDelivery;
-};
-```
-
-### 调度类型
-
-| 类型 | 说明 |
-|------|------|
-| `at` | 一次性定时 (指定时间点) |
-| `every` | 周期性 (`everyMs` + 可选锚点) |
-| `cron` | 标准 Cron 表达式 (通过 `croner` 库, 支持时区) |
-
-### Payload 类型
-
-| 类型 | 说明 |
-|------|------|
-| `systemEvent` | 注入系统消息 (如心跳提示词) |
-| `agentTurn` | 触发完整 Agent 对话轮次 (可覆盖模型/超时/路由) |
-
-Cron 任务持久化为 JSON 文件 (`CronStoreFile`, version: 1)。
+每个定时任务触发时，会注入一条系统消息或直接触发一轮完整的 Agent 对话（走工具循环的完整流程）。任务持久化为本地 JSON 文件。
 
 ## 插件系统
 
-### 插件 API
+OpenClaw 的渠道、工具、Hook 都是通过插件系统注册的。插件系统让 OpenClaw 可以在不修改核心代码的情况下扩展功能。
 
-源码: `src/plugins/types.ts`
+一个插件可以做以下任何事情：
 
-`OpenClawPluginApi` 提供的注册方法：
-
-| 方法 | 说明 |
+| 能力 | 说明 |
 |------|------|
-| `registerChannel()` | 注册渠道 |
-| `registerTool()` | 注册 Agent 工具 |
-| `registerHook()` / `on()` | 注册生命周期 Hook |
-| `registerCommand()` | 注册自定义命令 (绕过 LLM) |
-| `registerCli()` | 注册 CLI 子命令 |
-| `registerHttpRoute()` | 注册 HTTP 路由 |
-| `registerGatewayMethod()` | 注册 WebSocket RPC 方法 |
-| `registerService()` | 注册后台服务 |
+| 注册渠道 | 接入新的即时通讯平台 |
+| 注册工具 | 给 Agent 添加新能力 |
+| 注册 Hook | 在 Agent 生命周期的关键节点插入逻辑 |
+| 注册命令 | 添加用户可直接执行的命令（不经过 LLM） |
+| 注册 HTTP 路由 | 在 Gateway 上添加自定义 API |
+| 注册 WebSocket RPC 方法 | 在 Gateway 上添加自定义 RPC |
 
 ### 生命周期 Hook
 
-共 18 个 Hook 点：
+插件可以在 Agent 执行的 18 个关键节点插入逻辑：
 
 ```mermaid
 graph LR
-    subgraph Agent 生命周期
+    subgraph Agent 执行
         direction LR
         A1[before_model_resolve] --> A2[before_prompt_build] --> A3[before_agent_start]
         A3 --> A4[llm_input] --> A5[llm_output] --> A6[agent_end]
     end
 
-    subgraph 压缩 & 重置
-        B1[before_compaction] --> B2[after_compaction] --> B3[before_reset]
-    end
-
-    subgraph 消息
+    subgraph 消息收发
         C1[message_received] --> C2[message_sending] --> C3[message_sent]
     end
 
-    subgraph 工具
-        D1[before_tool_call] --> D2[after_tool_call] --> D3[tool_result_persist]
-    end
-
-    subgraph 会话 & 网关
-        E1[session_start] --> E2[session_end]
-        F1[gateway_start] --> F2[gateway_stop]
+    subgraph 工具调用
+        D1[before_tool_call] --> D2[after_tool_call]
     end
 ```
 
-## Monorepo 结构
+比如 `before_agent_start` Hook 可以在 Agent 开始执行前注入额外的上下文（这就是 pi-embedded-runner 阶段二中"Hook 执行"步骤做的事情）。
 
-源码: `pnpm-workspace.yaml`
+## 项目结构
 
-```yaml
-packages:
-  - .                # 核心包 (openclaw)
-  - ui               # 控制面板 UI (Vite + Lit)
-  - packages/*       # 兼容性 shim (clawdbot, moltbot)
-  - extensions/*     # 渠道/功能扩展 (31 个)
-```
+OpenClaw 是一个 pnpm Monorepo，除了核心包之外还包含 UI、扩展和原生应用：
 
-### 原生应用
-
-| 平台 | 路径 | 技术 |
-|------|------|------|
-| iOS | `apps/ios/` | SwiftUI + WatchExtension |
-| macOS | `apps/macos/` | Swift Package (Menu Bar) |
-| Android | `apps/android/` | Gradle |
-
-## 关键源码路径索引
-
-| 模块 | 路径 | 说明 |
-|------|------|------|
-| CLI 入口 | `openclaw.mjs` → `src/entry.ts` | 编译缓存 + 警告抑制 |
-| 命令注册 | `src/cli/program/command-registry.ts` | 核心命令 |
-| 子命令注册 | `src/cli/program/register.subclis.ts` | gateway, models, sandbox 等 |
-| Gateway HTTP | `src/gateway/server-http.ts` | 原生 http 服务器 |
-| Gateway WS | `src/gateway/server-runtime-state.ts` | ws 库, noServer 模式 |
-| Gateway 启动 | `src/gateway/server.impl.ts:162` | `port = 18789` |
-| Gateway 认证 | `src/gateway/auth.ts` | 4 种认证模式 |
-| Gateway 协议 | `src/gateway/protocol/` | TypeBox + Ajv |
-| RPC 方法列表 | `src/gateway/server-methods-list.ts` | 93+ 方法 |
-| Agent 运行 | `src/agents/pi-embedded-runner/run.ts` | 核心运行循环 |
-| Agent 作用域 | `src/agents/agent-scope.ts` | 配置解析 |
-| Agent 默认值 | `src/agents/defaults.ts` | anthropic / claude-opus-4-6 |
-| 模型解析 | `src/agents/model-selection.ts` | Provider ID 规范化 |
-| 模型目录 | `src/agents/model-catalog.ts` | ModelRegistry |
-| Provider 配置 | `src/agents/models-config.providers.ts` | 15+ Provider |
-| 工具注册 | `src/agents/openclaw-tools.ts` | OpenClaw 专属工具 |
-| Exec 工具 | `src/agents/bash-tools.exec.ts` | Shell 执行 + 审批 |
-| 工具策略 | `src/agents/pi-tools.policy.ts` | allow/deny 列表 |
-| 沙箱 | `src/agents/sandbox/` | Docker 隔离 |
-| 渠道注册表 | `src/channels/registry.ts` | 8 核心渠道 |
-| 渠道插件类型 | `src/channels/plugins/types.plugin.ts` | ChannelPlugin 接口 |
-| 插件 API | `src/plugins/types.ts` | OpenClawPluginApi |
-| 记忆管理 | `src/memory/manager.ts` | 混合搜索 |
-| 记忆 Schema | `src/memory/memory-schema.ts` | SQLite 表定义 |
-| QMD 管理 | `src/memory/qmd-manager.ts` | qmd 后端 |
-| 会话存储 | `src/config/sessions.ts` | JSON + JSONL |
-| Cron 服务 | `src/cron/service.ts` | 定时任务 |
-| 配置类型 | `src/config/types.openclaw.ts` | OpenClawConfig |
-| 扩展 API | `src/extensionAPI.ts` | 扩展公开接口 |
-| 插件 SDK | `src/plugin-sdk/index.ts` | 渠道适配器类型 |
-| 构建配置 | `tsdown.config.ts` | 8 入口点打包 |
+| 目录 | 内容 |
+|------|------|
+| `.`（根目录） | 核心包：Gateway、Agent、工具、渠道、记忆等 |
+| `ui/` | 控制面板 Web UI（Vite + Lit） |
+| `extensions/` | 31 个扩展：扩展渠道、额外功能 |
+| `apps/ios/` | iOS 客户端（SwiftUI） |
+| `apps/macos/` | macOS Menu Bar 应用（Swift） |
+| `apps/android/` | Android 客户端（Gradle） |
 
 ---
 
 *文档版本: 基于 OpenClaw v2026.2.18 源码分析*
-*分析方法: 逐文件阅读 src/ 目录核心模块，所有结论均标注源码路径*
