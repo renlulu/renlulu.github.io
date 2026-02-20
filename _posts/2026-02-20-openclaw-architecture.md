@@ -30,46 +30,37 @@ OpenClaw 是一个多渠道 AI 智能体网关平台。核心定位是：**自�
 
 ```mermaid
 graph TB
-    subgraph Channels["用户接入层"]
+    subgraph Channels["30+ 渠道"]
         direction LR
-        WA[WhatsApp] ~~~ TG[Telegram] ~~~ DC[Discord] ~~~ SL[Slack] ~~~ MORE[30+ 渠道]
+        WA[WhatsApp] ~~~ TG[Telegram] ~~~ DC[Discord] ~~~ SL[Slack] ~~~ MORE[...]
     end
 
     subgraph Process["单一 Node.js 进程"]
-        GW["<b>Gateway — IO 层</b> (端口 18789)<br/>HTTP · WebSocket · OpenAI 兼容 API<br/>认证 · 协议路由 · 渠道适配"]
-
-        HOOKS["<b>插件 Hook 链</b><br/>18 个生命周期节点 (message_received → ... → message_sending)<br/>观察与干预: 审计 · 安全过滤 · 动态配置"]
-
-        AGENT["<b>Agent — 执行层</b> (pi-embedded-runner)<br/>准备 → 工具循环 → 异常处理 (压缩 · failover)"]
+        GW["<b>Gateway</b> — IO 层 (HTTP · WebSocket · OpenAI API)"]
+        HOOKS["<b>插件 Hook 链</b> — 18 个生命周期节点"]
+        AGENT["<b>Agent</b> — 执行层 (pi-embedded-runner)"]
     end
 
     subgraph Providers["LLM Provider"]
         direction LR
-        P1[Anthropic] ~~~ P2[OpenAI] ~~~ P3[Google] ~~~ P4[Bedrock] ~~~ P5[15+ 其他]
+        P1[Anthropic] ~~~ P2[OpenAI] ~~~ P3[Google] ~~~ P4[Bedrock] ~~~ P5[15+]
     end
 
     subgraph Tools["工具系统"]
-        subgraph ExtTools["外部交互"]
-            direction LR
-            E1["exec · process<br/>(系统命令)"] ~~~ E2["browser<br/>(浏览器控制)"] ~~~ E3["web_search · web_fetch<br/>(网络访问)"]
-        end
-        subgraph IntTools["文件与存储"]
-            direction LR
-            I1["read · write · edit<br/>(文件操作)"] ~~~ I2["memory_search · memory_get<br/>(记忆检索)"] ~~~ I3["message · cron · canvas<br/>(扩展能力)"]
-        end
-    end
-
-    subgraph Storage["本地存储 (⚠️ 无外部数据库)"]
         direction LR
-        S1["会话: JSONL"] ~~~ S2["配置: JSON"] ~~~ S3["记忆: SQLite<br/>(sqlite-vec + FTS5)"]
+        EXT["<b>外部交互</b><br/>exec · browser · web_search"] ~~~ INT["<b>文件与存储</b><br/>read · write · edit · memory"]
     end
 
-    Channels <-->|"消息收发 (Webhook · Bot API · WebSocket)"| GW
+    subgraph Storage["本地存储 (无外部数据库)"]
+        direction LR
+        S1["会话 JSONL"] ~~~ S2["配置 JSON"] ~~~ S3["记忆 SQLite"]
+    end
+
+    Channels <-->|"消息收发"| GW
     GW --> HOOKS --> AGENT
-    AGENT -->|"LLM 调用 (流式)"| Providers
+    AGENT -->|"LLM 调用"| Providers
     AGENT --> Tools
-    IntTools --> Storage
-    AGENT -.->|"直接读写会话"| S1
+    INT --> Storage
 ```
 
 ## 启动流程
