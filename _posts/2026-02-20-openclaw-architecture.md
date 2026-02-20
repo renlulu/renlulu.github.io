@@ -424,27 +424,140 @@ OpenClaw 把渠道分成两级：
 
 ## 记忆系统
 
+源码: `src/memory/`（89 个文件，约 8,900 行）
+
 工具循环中，LLM 的上下文窗口是有限的（比如 200K tokens）。如果 Agent 需要回忆几天前的对话内容，或者参考用户写的备忘录，就需要记忆系统。
 
-记忆系统的作用是：**把大量的历史信息（对话记录、用户笔记）索引起来，在需要时搜索出最相关的片段注入 LLM 的上下文**。
+记忆系统的作用是：**把大量的历史信息索引起来，在 Agent 需要时搜索出最相关的片段，作为工具调用的结果注入 LLM 的上下文**。
+
+### 一次记忆召回的完整过程
+
+假设用户上周在 `memory/decisions.md` 里写了"数据库选用 PostgreSQL，原因是需要 JSONB 支持"。一周后用户问 Agent："我们之前数据库选型的结论是什么？"
+
+```
+用户: "我们之前数据库选型的结论是什么？"
+      ↓
+LLM 收到消息，System Prompt 中有一段指令：
+  "回答关于之前的工作、决定、偏好等问题前，
+   先调用 memory_search 搜索 MEMORY.md 和 memory/*.md"
+      ↓
+LLM 决定调用 memory_search("数据库选型")
+      ↓
+搜索引擎执行混合搜索（详见下文）
+  → 返回: [{
+      path: "memory/decisions.md",
+      startLine: 12, endLine: 18,
+      score: 0.82,
+      snippet: "数据库选用 PostgreSQL，原因是需要 JSONB 支持..."
+    }]
+      ↓
+LLM 看到搜索结果，想要更多上下文
+  → 调用 memory_get("memory/decisions.md", startLine=8, endLine=25)
+  → 拿到完整的决策记录
+      ↓
+LLM 基于记忆内容回答用户问题
+```
+
+关键点：**记忆不是自动注入的**。Agent 必须主动调用 `memory_search` 工具去搜索，搜索结果作为工具调用的返回值进入 LLM 上下文。System Prompt 中的指令引导 Agent 在合适的时机去搜索，但最终是否搜索由 LLM 自主决定。
+
+### 两个记忆工具
+
+| 工具 | 作用 | 参数 |
+|------|------|------|
+| `memory_search` | 搜索记忆，返回匹配片段的摘要和位置 | `query`（必填）、`maxResults`（默认 6）、`minScore`（默认 0.35） |
+| `memory_get` | 根据搜索结果的位置，读取原文的完整内容 | `path`、`startLine`、`endLine` |
+
+典型的使用模式是**先搜后读**：`memory_search` 找到相关片段的位置和摘要（每个摘要最多 700 字符），如果需要更多细节，再用 `memory_get` 读取原文。
 
 ### 数据来源
 
-- **Markdown 文件** — 用户在工作区写的 `MEMORY.md` 和 `memory/*.md` 文件，可以理解为 Agent 的"笔记本"
-- **会话记录** — 历史对话的 JSONL 文件，自动提取对话文本
+- **Markdown 文件**（主要来源）— 用户在工作区写的 `MEMORY.md`（或 `memory.md`）和 `memory/*.md` 目录下的文件，可以理解为 Agent 的"笔记本"
+- **会话记录**（实验性功能）— 历史对话的 JSONL 文件，自动提取用户和 Agent 的消息文本。通过增量追踪（每 100KB 或 50 条消息触发一次同步）索引新内容
 
-### 索引和搜索
+核心系统中的记忆是**只读的**——Agent 只能搜索和读取，不能写入。用户通过直接编辑 Markdown 文件来维护记忆内容，记忆系统会自动监测文件变化并增量更新索引。
 
-记忆内容被切成文本块（chunks），每个块生成嵌入向量，存入 SQLite + sqlite-vec 向量数据库。搜索时使用**混合搜索**：
+### 索引流程
 
-- **向量搜索**（余弦相似度）— 找语义相关的内容，权重 70%
-- **关键词搜索**（FTS5 全文索引）— 找精确匹配的关键词，权重 30%
-- **MMR 去重** — 避免返回重复的结果
-- **时间衰减** — 越新的记忆权重越高（默认 30 天半衰期）
+记忆内容从文件到可搜索状态，经历四个步骤：
 
-嵌入向量可以用 OpenAI、Google、Voyage 的 API 生成，也可以用本地的 `node-llama-cpp` 离线生成。
+```
+Markdown 文件变化（新建/修改/删除）
+      ↓
+文件监听器检测到变化（chokidar，1.5 秒防抖）
+      ↓
+分块（chunking）
+  - 按 token 切割：每块 400 tokens，80 tokens 重叠
+  - 重叠保证块与块之间的语义连贯
+  - 每个块记录：文本内容、起止行号、内容哈希（SHA256）
+      ↓
+生成嵌入向量
+  - 先查 embedding cache（按 provider + model + 内容哈希）
+  - 命中缓存则跳过，未命中则调用 embedding API
+  - 分批处理：每批最多 8,000 tokens
+      ↓
+写入 SQLite 数据库（三张表）
+  - chunks 表：存储文本内容和元数据
+  - chunks_vec 表：sqlite-vec 向量索引（Float32 二进制存储）
+  - chunks_fts 表：FTS5 全文索引
+```
 
-值得注意的是，整个记忆系统**不依赖任何外部数据库**——全部基于 Node.js 内置的 `node:sqlite` 模块和本地文件系统。
+**同步触发时机**可配置：
+
+| 触发方式 | 说明 |
+|----------|------|
+| 文件监听 | 默认开启，监控 `MEMORY.md` 和 `memory/` 目录变化 |
+| 会话启动时 | 可选，新对话开始时预热同步 |
+| 搜索前 | 可选，每次搜索前检查是否有脏数据 |
+| 定时同步 | 每隔 N 分钟同步一次 |
+
+### 搜索算法
+
+搜索分两种模式，取决于是否有可用的 embedding provider：
+
+**混合搜索**（有 embedding provider 时，默认模式）：
+
+1. 将查询文本生成嵌入向量
+2. 同时执行两路搜索：
+   - **向量搜索** — `vec_distance_cosine()` 计算余弦距离，转换为相似度分数
+   - **关键词搜索** — FTS5 BM25 排序，通过 `1/(1+rank)` 转换为 0-1 分数
+3. 按权重合并两路结果（默认 70% 向量 + 30% 关键词）
+4. **MMR 重排序**（λ=0.7）— 在相关性和多样性之间取平衡，用 Jaccard 相似度去除内容重复的结果
+5. **时间衰减**（可选）— 对带日期的文件（如 `memory/2026-02-15.md`）应用指数衰减，半衰期 30 天
+6. 过滤掉低于最低分数阈值的结果
+
+**纯关键词搜索**（FTS-only 降级模式）：
+
+当 embedding provider 不可用时（API 失败、未配置等），自动降级：
+1. 从查询中提取关键词
+2. 每个关键词单独搜索 FTS5 索引
+3. 合并结果，保留每个块的最高分数
+
+这意味着**即使没有配置任何 embedding API，记忆系统仍然可用**——只是搜索质量从语义匹配退化为关键词匹配。
+
+### Embedding Provider
+
+| Provider | 默认模型 | 向量维度 | 说明 |
+|----------|----------|----------|------|
+| OpenAI | text-embedding-3-small | 1,536 | 批量 API |
+| Google Gemini | gemini-embedding-001 | 768 | 异步批量 |
+| Voyage | voyage-4-large | 1,024 | 批量 API |
+| 本地 | embedding-gemma-300m | 768 | node-llama-cpp，无需 API |
+
+自动选择策略：优先尝试本地模型 → OpenAI → 其他可用 provider。连续 2 次失败后自动禁用该 provider 并切换。
+
+**Embedding cache** 是性能关键——相同内容不会重复调用 API。缓存按 `(provider, model, provider_key, 内容哈希)` 去重，修改文件中未变化的段落不会产生额外的 API 调用。
+
+### 存储架构
+
+整个记忆系统**不依赖任何外部数据库**——全部基于 Node.js 内置的 `node:sqlite` 模块和本地文件系统：
+
+| 表 | 引擎 | 用途 |
+|-----|------|------|
+| `files` | SQLite | 追踪已索引文件的路径、哈希、修改时间 |
+| `chunks` | SQLite | 存储文本块的内容、元数据、嵌入向量（JSON） |
+| `chunks_vec` | sqlite-vec | 向量索引，Float32 二进制存储，支持余弦距离查询 |
+| `chunks_fts` | FTS5 | 全文索引，支持 BM25 排序 |
+| `embedding_cache` | SQLite | 嵌入向量缓存，避免重复 API 调用 |
 
 ## 会话管理
 
