@@ -59,7 +59,8 @@ graph TB
     Channels <-->|"消息收发"| GW
     GW --> HOOKS --> AGENT
     AGENT -->|"熔断 · fallback"| Providers
-    AGENT <-->|"工具循环"| Tools
+    AGENT -->|"调用工具"| Tools
+    Tools -->|"返回结果"| AGENT
     INT --> Storage
 ```
 
@@ -85,12 +86,15 @@ graph TD
 
 ## Gateway 详解
 
-Gateway 本质上是 Agent 系统的 **IO 层**——它本身不做任何"智能"的事情，只负责消息的进和出：
+Gateway 是 Agent 系统的 **IO 层与控制面**——它负责消息的进出，同时承担请求级别的决策：
 
 - **输入**：从各种来源（WebSocket、HTTP、Telegram Webhook、Discord Bot...）收消息，统一格式后交给 Agent
 - **输出**：把 Agent 的结果推回对应的来源
+- **Session 路由**：根据 session key（如 `agent:coder:telegram:dm:123`）决定消息该交给哪个 Agent、哪个会话
+- **Hook 链编排**：在消息进入 Agent 之前触发 `message_received`、`before_model_resolve` 等 Hook，插件可以在这一层做安全过滤、动态模型切换等决策
+- **OpenAI 兼容 API**：`/v1/responses`、`/v1/chat/completions` 端点让 OpenClaw 可以作为 API 后端使用，不仅是聊天平台
 
-认证、协议、路由这些都是 IO 层的职责。没有 Gateway，Agent 照样能跑（`openclaw agent --local` 就是直接调用 Agent，跳过 Gateway）。但没有 Gateway，就只能在本地终端里用，接不上任何远程渠道。
+认证、协议、路由这些都是 Gateway 的职责。没有 Gateway，Agent 照样能跑（`openclaw agent --local` 就是直接调用 Agent，跳过 Gateway）。但没有 Gateway，就只能在本地终端里用，接不上任何远程渠道，也没有 Hook 链的保护。
 
 ### HTTP 与 WebSocket
 
