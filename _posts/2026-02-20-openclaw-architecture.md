@@ -86,37 +86,44 @@ graph TD
 
 ## Gateway 详解
 
-Gateway 是 Agent 系统的 **IO 层与控制面**——它负责消息的进出，同时承担请求级别的决策：
+Gateway 的核心问题是：**同一个 Agent，怎么同时服务 Telegram 用户、API 开发者和 CLI 用户？**
 
-- **输入**：从各种来源（WebSocket、HTTP、Telegram Webhook、Discord Bot...）收消息，统一格式后交给 Agent
-- **输出**：把 Agent 的结果推回对应的来源
-- **Session 路由**：根据 session key（如 `agent:coder:telegram:dm:123`）决定消息该交给哪个 Agent、哪个会话
-- **Hook 链编排**：在消息进入 Agent 之前触发 `message_received`、`before_model_resolve` 等 Hook，插件可以在这一层做安全过滤、动态模型切换等决策
-- **OpenAI 兼容 API**：`/v1/responses`、`/v1/chat/completions` 端点让 OpenClaw 可以作为 API 后端使用，不仅是聊天平台
+这三类调用方发来的请求形态完全不同：
 
-认证、协议、路由这些都是 Gateway 的职责。没有 Gateway，Agent 照样能跑（`openclaw agent --local` 就是直接调用 Agent，跳过 Gateway）。但没有 Gateway，就只能在本地终端里用，接不上任何远程渠道，也没有 Hook 链的保护。
+```
+Telegram Webhook POST:
+  {"update_id": 123, "message": {"chat": {"id": 456}, "text": "帮我看看 nginx"}}
 
-### HTTP 与 WebSocket
+OpenAI 兼容 API POST /v1/chat/completions:
+  {"model": "coder", "messages": [{"role": "user", "content": "帮我看看 nginx"}]}
 
-Gateway 在同一个端口（默认 18789）上提供两种通信方式：
+WebSocket RPC:
+  {"type": "req", "id": 7, "method": "chat.send", "params": {"text": "帮我看看 nginx"}}
+```
 
-**HTTP**（源码: `src/gateway/server-http.ts`）— 一问一答，请求完连接就断：
+同样一句"帮我看看 nginx"，从三个完全不同的协议、格式、认证方式进来。Gateway 要做的是：**把这些不同形态的输入统一成一条内部消息，交给 Agent 执行，再把结果按原路返回**。
 
-- OpenAI 兼容 API（`POST /v1/responses`、`POST /v1/chat/completions`）
-- 渠道 Webhook 回调（Slack、Telegram 等推送消息过来，回个 200 就行）
-- Control UI 静态文件
-- 路由采用顺序匹配链，每个 handler 返回 `true`（已处理）或 `false`（跳过），不是 Express 中间件模式
+这就是为什么 Gateway 不仅仅是"转发"——它是协议翻译层。Telegram 的 `chat.id` 要映射成 session key，OpenAI API 的 `model` 字段要映射成 Agent ID，WebSocket 的 RPC 调用要解包成方法调用。没有 Gateway，Agent 就得自己处理 30+ 种协议格式，耦合会非常严重。
 
-**WebSocket**（源码: `src/gateway/server-runtime-state.ts`、`src/gateway/protocol/`）— 连接一直保持，双方随时互发消息：
+反过来说，没有 Gateway，Agent 照样能跑——`openclaw agent --local` 就是直接调用 Agent，跳过 Gateway，在终端里交互。这个设计保证了 Agent 对 Gateway 的**零依赖**，Gateway 是纯粹的加法。
 
-- 使用 `ws` 库的 `noServer` 模式，附着在 HTTP 服务器上
-- 承载 93+ 个 RPC 方法（`chat.send`、`agent`、`config.get`、`sessions.list` 等）
-- 服务端可以主动推送事件（Agent 执行进度、心跳、在线状态等）
-- 适合 CLI、Web UI 这种需要实时看到 Agent 执行过程的客户端
-- WebSocket 上跑的是自定义的 JSON RPC 协议（Protocol v3），使用 TypeBox 定义 Schema、Ajv 运行时校验，只有三种帧：
-  - **req** — 客户端发起请求：`{ type: "req", id, method, params? }`
-  - **res** — 服务端返回结果：`{ type: "res", id, ok, payload?, error? }`
-  - **event** — 服务端主动推送：`{ type: "event", event, payload? }`
+### 为什么 HTTP 和 WebSocket 共用一个端口
+
+Gateway 在同一个端口（默认 18789）上同时提供 HTTP 和 WebSocket 两种协议（源码: `src/gateway/server-http.ts`、`src/gateway/server-runtime-state.ts`）。
+
+这不是偶然的——OpenClaw 要自托管在各种环境（VPS、NAS、家庭网络），暴露一个端口比暴露两个端口简单得多（防火墙规则、端口映射、反向代理配置都只需要写一份）。技术上通过 `ws` 库的 `noServer` 模式实现：WebSocket 连接复用 HTTP 服务器的 `upgrade` 事件，不需要独立监听。
+
+两种协议服务不同的场景：
+
+**HTTP** — 无状态的一次性请求：
+- **渠道 Webhook**：Telegram、Slack 等平台推送消息过来，Gateway 解析后交给 Agent，返回 200。比如 Telegram 发来一个 `Update` JSON，Gateway 的 Telegram 插件从中提取 `chat_id`、`message.text`，转换成内部消息格式
+- **OpenAI 兼容 API**：`POST /v1/chat/completions`、`POST /v1/responses`——让 OpenClaw 可以被当作普通的 LLM API 调用，任何支持 OpenAI SDK 的客户端都能直接对接
+- 路由不用 Express 中间件，而是顺序匹配链：每个 handler 返回 `true`（已处理）或 `false`（跳过下一个）。比 Express 的洋葱模型更直接，没有 `next()` 的隐式传递
+
+**WebSocket** — 长连接，双向实时通信：
+- CLI 和 Web UI 需要**实时看到 Agent 的执行过程**（正在读哪个文件、正在执行什么命令、工具循环到了第几轮），这用 HTTP 轮询做不了，必须服务端主动推送
+- 协议是自定义的 JSON RPC（Protocol v3），只有三种帧：`req`（客户端请求）、`res`（服务端响应）、`event`（服务端推送）。为什么不用 gRPC？因为 gRPC 需要 HTTP/2、需要 proto 文件、浏览器端需要 grpc-web 代理——对于一个自托管工具来说，JSON over WebSocket 是最低门槛的选择
+- 承载 93+ 个 RPC 方法（`chat.send`、`sessions.list`、`config.get` 等），用 TypeBox 定义 Schema、Ajv 运行时校验
 - 连接建立时有握手流程：服务端先发 challenge（含 nonce），客户端回复认证信息和协议版本，验证通过后回复 `hello-ok`
 
 ### 认证机制
