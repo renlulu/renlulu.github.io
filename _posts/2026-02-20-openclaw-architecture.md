@@ -37,7 +37,7 @@ graph TB
 
     subgraph Process["单一 Node.js 进程"]
         GW["<b>Gateway</b> — IO 层 (HTTP · WebSocket · OpenAI API)"]
-        HOOKS["<b>插件 Hook 链</b> — 18 个生命周期节点"]
+        HOOKS["<b>插件 Hook 链</b> — 20 个生命周期节点"]
         AGENT["<b>Agent</b> — 执行层 (pi-embedded-runner)"]
     end
 
@@ -170,6 +170,42 @@ OpenClaw 的 Agent 不是简单的聊天机器人，而是能**自主完成编�
 
 工具循环的底层实现来自 `@mariozechner/pi-coding-agent` 的 `createAgentSession()`，`pi-embedded-runner` 通过 `subscribeEmbeddedPiSession()` 订阅每一轮的工具调用结果，用于实时推送状态和收集最终输出。
 
+#### 工具循环的三道防线
+
+自主驱动意味着 LLM 可能一口气跑几十轮工具调用，这会带来两个风险：上下文窗口溢出和失控的无限循环。OpenClaw 用三道防线解决：
+
+**1. 上下文守卫（Context Guard）**
+
+源码: `compact.ts` — `installToolResultContextGuard()`
+
+每次工具调用返回结果后，上下文守卫检查当前对话的 token 总量是否逼近模型的上下文窗口上限。如果超过阈值（通常是上下文窗口的 80%），触发自动压缩：
+
+```
+工具返回结果 → 检查 token 总量
+                  ↓
+              超过阈值？
+              /        \
+           否            是
+            ↓              ↓
+       继续循环     触发上下文压缩
+                       ↓
+                  用 LLM 对旧对话生成摘要
+                  替换原始对话历史
+                  （最多重试 3 次）
+                       ↓
+                  释放出空间，继续循环
+```
+
+压缩不是简单截断——它用 LLM 自身来生成摘要，保留关键信息（如已执行的操作、发现的问题、当前进度），丢弃冗余的工具输出原文。
+
+**2. 大体积结果截断**
+
+单次工具调用可能返回巨大的结果（比如 `exec("find / -name '*.log'")` 扫描整个磁盘）。`compact.ts` 对超过阈值的单条工具结果执行截断，保留头尾、丢弃中间，并在截断点插入 `[...truncated...]` 标记。
+
+**3. 中止机制（Abort）**
+
+用户可以随时中止正在执行的工具循环。中止信号通过 `AbortController` 传播到工具循环的每一层——包括正在等待的 LLM API 调用和正在执行的工具（如长时间运行的 shell 命令）。`runs.ts` 模块追踪所有进行中的 run，提供 `abort()` 方法供 Gateway 和 WebSocket 客户端调用。
+
 ### pi-embedded-runner：Agent 编排器
 
 源码: `src/agents/pi-embedded-runner/`
@@ -292,6 +328,43 @@ OpenClaw 内置了 15+ 个 Provider（源码: `src/agents/models-config.provider
 | vLLM、NVIDIA、HuggingFace、Together AI | OpenAI 兼容 | 推理服务 |
 
 大部分国产模型和推理服务都走 OpenAI 兼容协议，只需要改 baseUrl 和 apiKey 就能接入。
+
+### Provider 容错：熔断与降级
+
+在生产环境中，任何一个 Provider 都可能随时不可用——API 限流（429）、鉴权失效（401）、服务宕机（500/502）。OpenClaw 在 `pi-embedded-runner` 的异常处理阶段实现了完整的 Provider 容错链：
+
+```
+请求发送到 Provider A（主模型）
+      ↓
+API 返回 429 Too Many Requests
+      ↓
+熔断器记录失败，标记 Provider A 进入冷却期
+  - 冷却时间采用指数退避：首次 30s → 60s → 120s → ...
+  - 冷却期间所有请求自动跳过该 Provider
+      ↓
+自动切换到 Provider B（fallback 模型）
+      ↓
+Provider B 正常响应 → 继续执行
+      ↓
+冷却期结束后，Provider A 重新标记为可用
+```
+
+具体机制（源码: `auth-profiles.ts`）：
+
+**多 Key 轮换** — 每个 Provider 可以配置多个 API Key。遇到 401/429 时，先尝试同一 Provider 的下一个 Key，所有 Key 都失败后才触发模型 failover。
+
+**模型 fallback 链** — Agent 配置中的 `model.fallbacks` 数组定义了降级顺序。比如：
+```json
+{
+  "primary": "anthropic/claude-opus-4-6",
+  "fallbacks": ["openai/gpt-4o", "google/gemini-2.5-flash"]
+}
+```
+Claude 不可用时切 GPT-4o，GPT-4o 也不可用时切 Gemini。
+
+**Thinking 能力降级** — 如果模型不支持当前的推理级别（比如 `thinking: high`），不会直接报错，而是逐级降级：`high → medium → low → off`，直到找到模型支持的级别。
+
+这套容错机制对用户完全透明——工具循环不会因为某个 Provider 临时不可用而中断，只是背后静默地切换了模型。
 
 ## 工具系统
 
@@ -582,7 +655,7 @@ OpenClaw 的渠道、工具、Hook 都是通过插件系统注册的。插件系
 
 ### 生命周期 Hook
 
-插件可以在 Agent 执行的 18 个关键节点插入逻辑：
+插件可以在 Agent 执行的 20 个关键节点插入逻辑（以下展示核心节点）：
 
 ```mermaid
 graph LR
@@ -626,7 +699,32 @@ message_sending Hook 触发
 回复发送给用户
 ```
 
-**Hook 不改变执行流程本身**，而是在关键节点提供"观察和干预"的机会。这让插件开发者可以在不修改 Agent 核心逻辑的情况下，实现审计、安全过滤、动态配置等横切关注点。
+### Hook 的控制流机制
+
+Hook 不只是被动的"观察者"——它们可以**主动控制执行流程**。每个 Hook 回调可以返回三种信号：
+
+| 返回值 | 效果 |
+|--------|------|
+| `undefined` / 无返回 | 继续执行，不干预 |
+| `{ block: true, reason: "..." }` | **拦截**当前操作，返回错误给调用方 |
+| `{ cancel: true }` | **静默取消**当前操作，不报错 |
+
+举个例子，`before_tool_call` Hook 可以拦截危险命令：
+
+```typescript
+// 安全审计插件
+hooks.on("before_tool_call", async (ctx) => {
+  if (ctx.tool === "exec" && ctx.args.command.includes("rm -rf")) {
+    return { block: true, reason: "禁止执行破坏性命令" };
+  }
+});
+```
+
+**优先级排序** — 同一个 Hook 节点上可以注册多个回调（来自不同插件）。回调按注册的 `priority` 数值排序执行（数值小的先执行）。一旦某个回调返回 `block` 或 `cancel`，后续回调**不再执行**，形成短路（short-circuit）。
+
+这意味着高优先级的安全插件可以在低优先级的功能插件之前拦截请求，保证安全策略始终优先生效。
+
+Hook 系统的设计让 OpenClaw 的核心执行流程保持简洁，而所有横切关注点（审计、安全过滤、动态路由、计费）都通过插件以声明式的方式注入，不需要修改 Agent 或 Gateway 的任何核心代码。
 
 ## 项目结构
 
