@@ -58,8 +58,8 @@ graph TB
 
     Channels <-->|"消息收发"| GW
     GW --> HOOKS --> AGENT
-    AGENT -->|"LLM 调用"| Providers
-    AGENT --> Tools
+    AGENT -->|"熔断 · fallback"| Providers
+    AGENT <-->|"工具循环"| Tools
     INT --> Storage
 ```
 
