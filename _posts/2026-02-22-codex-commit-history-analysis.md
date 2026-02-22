@@ -152,7 +152,7 @@ codex-rs/
    - `McpClient`（[#822](https://github.com/openai/codex/pull/822)）：让 Codex 可以调用外部 MCP 服务器提供的工具
    - `mcp_servers` 配置支持（[#829](https://github.com/openai/codex/pull/829)）
 
-3. **AGENTS.md**（2025-05-09）：引入 `AGENTS.md` 取代 `instructions.md`，这个文件格式后来成了整个 coding agent 生态的事实标准——Claude Code、Cursor 等都支持类似机制。
+3. **[AGENTS.md](https://openai.com/index/introducing-codex/)**（2025-05-09）：引入 `AGENTS.md` 取代 `instructions.md`。这是一种放在仓库根目录的纯文本文件，相当于「给 AI agent 看的 README」——包含构建步骤、测试命令、代码规范等 agent 需要但不适合放在 README 里的上下文。Codex 在开始工作前会自动读取 AGENTS.md 构建指令链。这个格式后来被 [GitHub 上超过 2 万个仓库](https://www.infoq.com/news/2025/08/agents-md/)采用，成为 coding agent 生态的[事实标准](https://agents.md/)——Claude Code（CLAUDE.md）、Cursor（.cursorrules）等都支持类似机制。
 
 ### 为什么这么早引入 Rust？
 
