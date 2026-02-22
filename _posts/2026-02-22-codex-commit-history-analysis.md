@@ -1,6 +1,6 @@
 ---
 title: 解剖 3913 个 Commit：OpenAI Codex 从 0 到 1 的构建之路
-date: 2026-02-22 10:00:00 +0800
+date: 2026-02-22 01:00:00 +0800
 categories: [AI]
 tags: [codex, openai, coding-agent, rust, open-source]
 mermaid: true

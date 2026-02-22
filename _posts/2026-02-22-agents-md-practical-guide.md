@@ -1,6 +1,6 @@
 ---
 title: "AGENTS.md 实践指南：如何给 AI Agent 写一份好的「入职文档」"
-date: 2026-02-22 23:00:00 +0800
+date: 2026-02-22 03:00:00 +0800
 categories: [AI]
 tags: [agents-md, coding-agent, codex, claude-code, cursor, copilot]
 ---
