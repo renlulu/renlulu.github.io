@@ -102,8 +102,9 @@ Codex 的执行模型围绕两个核心概念：
 - **Session**：整个会话的生命周期，持有模型客户端、MCP 连接、消息历史、审批缓存等状态
 - **TurnContext**：单次对话轮次的上下文，包含当前模型、沙箱策略、工作目录等
 
+源码：[`codex-rs/core/src/codex.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs)（简化）
+
 ```rust
-// codex-rs/core/src/codex.rs (简化)
 pub struct Session {
     model_client: ModelClient,          // 模型 API 客户端
     mcp_connection_manager: McpConnectionManager, // MCP 连接池
@@ -156,8 +157,9 @@ sequenceDiagram
 
 `codex-rs/cli/src/main.rs` 是 CLI 的入口。它使用 clap 解析命令行参数，然后根据子命令分发：
 
+源码：[`codex-rs/cli/src/main.rs`](https://github.com/openai/codex/blob/main/codex-rs/cli/src/main.rs)（简化）
+
 ```rust
-// codex-rs/cli/src/main.rs (简化)
 #[derive(Debug, Parser)]
 struct MultitoolCli {
     #[clap(subcommand)]
@@ -185,8 +187,9 @@ enum Subcommand {
 3. **处理响应**：如果包含 `tool_call`，执行工具并将结果追加到历史；如果是纯文本，结束循环
 4. **自动 compact**：如果 token 用量超过阈值，自动触发上下文压缩后继续
 
+源码：[`codex-rs/core/src/codex.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs)（简化）
+
 ```rust
-// codex-rs/core/src/codex.rs:4473 (简化)
 pub(crate) async fn run_turn(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
@@ -238,8 +241,9 @@ pub(crate) async fn run_turn(
 
 **ToolRouter** 负责将工具名映射到具体的 Handler：
 
+源码：[`codex-rs/core/src/tools/router.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs)（简化）
+
 ```rust
-// codex-rs/core/src/tools/router.rs (简化)
 pub struct ToolRouter {
     registry: ToolRegistry,
     specs: Vec<ConfiguredToolSpec>,
@@ -277,8 +281,9 @@ impl ToolRouter {
 3. **执行**：调用具体的 ToolRuntime
 4. **重试**：如果沙箱拒绝，尝试升级沙箱策略后重试
 
+源码：[`codex-rs/core/src/tools/orchestrator.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs)（简化）
+
 ```rust
-// codex-rs/core/src/tools/orchestrator.rs (简化)
 impl ToolOrchestrator {
     pub async fn run<Rq, Out, T>(
         &mut self, tool: &mut T, req: &Rq,
@@ -337,8 +342,9 @@ ShellHandler (core/tools/handlers/shell.rs)
 
 `exec.rs` 中的命令执行有严格的资源限制：
 
+源码：[`codex-rs/core/src/exec.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec.rs)
+
 ```rust
-// codex-rs/core/src/exec.rs (关键常量)
 const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;  // 默认 10 秒超时
 const EXEC_OUTPUT_MAX_BYTES: usize = 1024 * 1024;     // 输出上限 1 MiB
 const MAX_EXEC_OUTPUT_DELTAS_PER_CALL: usize = 10_000; // 流式事件上限
@@ -383,9 +389,9 @@ graph TB
 
 `codex-protocol` crate 定义了 Codex 内部的通信协议，采用 SQ（Submission Queue）/ EQ（Event Queue）的异步模式：
 
-```rust
-// codex-rs/protocol/src/protocol.rs (简化)
+源码：[`codex-rs/protocol/src/protocol.rs`](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs)（简化）
 
+```rust
 /// 用户 → Agent 的请求
 pub struct Submission {
     pub id: String,
@@ -435,8 +441,9 @@ WebSocket 的优势在于：
 3. **更好的 prompt caching**：同一连接 = 同一节点 = 更高的缓存命中率
 4. **启动预热**：`ModelClientSession` 支持在 turn 开始前预建连接
 
+源码：[`codex-rs/core/src/tasks/regular.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/regular.rs)（简化）
+
 ```rust
-// codex-rs/core/src/tasks/regular.rs (简化)
 impl RegularTask {
     pub(crate) fn with_startup_prewarm(
         model_client: ModelClient,
@@ -464,8 +471,9 @@ impl RegularTask {
 
 Compact 的实现分为本地和远程两种：
 
+源码：[`codex-rs/core/src/compact.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs)（简化）
+
 ```rust
-// codex-rs/core/src/compact.rs (简化)
 pub(crate) async fn run_inline_auto_compact_task(
     sess: &Session,
     turn_context: &TurnContext,
@@ -492,8 +500,9 @@ pub(crate) async fn run_inline_auto_compact_task(
 
 `codex-hooks` crate 实现了一个轻量级的生命周期钩子系统，让用户可以在关键节点插入自定义逻辑：
 
+源码：[`codex-rs/hooks/src/types.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/types.rs)（简化）
+
 ```rust
-// codex-rs/hooks/src/types.rs (简化)
 pub enum HookEvent {
     AfterToolUse,   // 工具执行后
     AfterAgent,     // Agent 轮次结束后
@@ -519,8 +528,9 @@ Hooks 在 `ToolOrchestrator` 的执行流中被调用——工具执行完成后
 
 `ToolCallRuntime`（`tools/parallel.rs`）支持并行执行多个工具调用。关键设计是用 `RwLock` 控制并发——支持并行的工具（如 `read_file`）获取读锁，不支持并行的工具获取写锁：
 
+源码：[`codex-rs/core/src/tools/parallel.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)（简化）
+
 ```rust
-// codex-rs/core/src/tools/parallel.rs (简化)
 let _guard = if supports_parallel {
     Either::Left(lock.read().await)   // 可并行：读锁
 } else {
@@ -536,8 +546,9 @@ let _guard = if supports_parallel {
 
 整个系统使用 `tokio_util::CancellationToken` 实现取消传播。当用户按 Escape 时，取消信号从 TUI 层传播到 core 层，再到具体的工具执行，确保正在运行的命令被及时终止：
 
+源码：[`codex-rs/core/src/tools/parallel.rs`](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)
+
 ```rust
-// tools/parallel.rs 中的取消处理
 tokio::select! {
     _ = cancellation_token.cancelled() => {
         Ok(Self::aborted_response(&call, elapsed))
