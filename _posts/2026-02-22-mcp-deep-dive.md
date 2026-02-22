@@ -225,13 +225,53 @@ Server 从 stdin 读 JSON-RPC，往 stdout 写响应，stderr 用于日志。适
 
 **Streamable HTTP**（远程服务）：
 
-2025-03-26 引入，取代了之前的 HTTP+SSE 方案。单个 HTTP 端点同时支持 POST 和 GET：
+2025-03-26 引入，取代了之前的 HTTP+SSE 方案。
 
-- Client 发 POST 请求，Server 可以返回 `application/json`（单条响应）或 `text/event-stream`（流式）
-- 支持 `Mcp-Session-Id` 会话管理
-- 支持通过 SSE Event ID 实现断线重连
+旧方案的问题是需要**两个连接**：一个 POST 端点用于发送请求，一个独立的 GET 端点用于接收 SSE 流。这给部署带来了麻烦——防火墙、负载均衡器、反向代理都需要分别处理两个长连接。
 
-适合远程部署的 MCP Server。
+Streamable HTTP 合并为**单一端点**：
+
+```
+Client ──POST /mcp──> Server
+         │
+         ├─ 简单响应 → Content-Type: application/json（一次性返回）
+         └─ 流式响应 → Content-Type: text/event-stream（SSE 流）
+
+Client ──GET /mcp───> Server（可选，用于接收服务端主动推送）
+```
+
+完整的请求-响应流程：
+
+1. Client 发 POST 请求（JSON-RPC 消息体）
+2. Server 根据需要选择响应方式：
+   - 短操作（如 `tools/list`）：直接返回 `application/json`
+   - 长操作（如流式工具执行）：返回 `text/event-stream`，通过 SSE 逐步推送结果
+3. 每条 SSE 事件携带唯一 Event ID，Client 断线后通过 `Last-Event-ID` 头恢复
+
+会话管理：
+
+- Server 在初始化响应中返回 `Mcp-Session-Id` 头
+- Client 在后续所有请求中携带该 header
+- Server 可以拒绝无效或过期的 session ID（返回 HTTP 404）
+- Client 收到 404 后重新走初始化流程
+
+```
+# 初始化
+POST /mcp
+→ {"jsonrpc":"2.0","id":1,"method":"initialize",...}
+← Mcp-Session-Id: abc123
+← {"jsonrpc":"2.0","id":1,"result":{...}}
+
+# 后续请求携带 session ID
+POST /mcp
+Mcp-Session-Id: abc123
+→ {"jsonrpc":"2.0","id":2,"method":"tools/call",...}
+← Content-Type: text/event-stream
+← event: message
+← data: {"jsonrpc":"2.0","id":2,"result":{...}}
+```
+
+这个设计的好处：一个 URL、一个端口、标准 HTTP 语义，任何 HTTP 基础设施（CDN、API Gateway、负载均衡）都能直接工作。
 
 ## 真实案例：Codex 如何使用 MCP
 
