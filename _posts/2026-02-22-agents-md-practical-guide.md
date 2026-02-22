@@ -335,7 +335,7 @@ perl -ne 'print "$.: $_" if /[\x{200B}-\x{200F}\x{2028}-\x{202F}\x{2060}-\x{206F
 
 ## AAIF：标准化的未来？
 
-2025 年底，Linux Foundation 成立了 [Agentic AI Foundation（AAIF）](https://www.linuxfoundation.org/press/linux-foundation-launches-the-agentic-ai-foundation)，将三个核心项目收入旗下：
+2025 年底，Linux Foundation 成立了 [Agentic AI Foundation（AAIF）](https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation)，将三个核心项目收入旗下：
 
 1. **MCP（Model Context Protocol）**：agent 与工具的通信协议
 2. **AGENTS.md**：agent 的项目指引规范
