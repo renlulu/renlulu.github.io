@@ -28,54 +28,20 @@ mermaid: true
 | 基础设施层 | 43 | 配置、认证、日志、工具库 |
 
 ```mermaid
-graph TB
-    subgraph Surface["表面层 — 用户接口"]
-        CLI["cli<br/><small>命令行入口</small>"]
-        TUI["tui<br/><small>终端 UI</small>"]
-        APP["app-server<br/><small>VS Code/Web</small>"]
-        MCP_S["mcp-server<br/><small>MCP 协议</small>"]
-        EXEC_CLI["exec<br/><small>非交互执行</small>"]
-        CHATGPT["chatgpt<br/><small>ChatGPT 集成</small>"]
-    end
+graph TD
+    Surface["表面层 (6 crate)<br/>cli · tui · app-server · mcp-server · exec · chatgpt"]
+    CORE["codex-core (197 个源文件)<br/>Agent Loop + 工具路由 + 上下文管理"]
+    Proto["protocol (3 crate)<br/>事件定义 · 类型共享"]
+    API["API 层 (4 crate)<br/>codex-api · WebSocket · Realtime"]
+    Tools["工具与执行层 (12 crate)<br/>apply-patch · execpolicy · sandbox · hooks · MCP"]
+    Infra["基础设施 (43 crate)<br/>config · login · otel · utils/*"]
 
-    subgraph Core["核心层 — Agent 引擎"]
-        CORE["core<br/><small>197 个源文件<br/>Agent Loop + 工具路由<br/>+ 上下文管理</small>"]
-    end
-
-    subgraph Protocol["协议层"]
-        PROTO["protocol<br/><small>事件/类型定义</small>"]
-        APP_PROTO["app-server-protocol<br/><small>App Server 协议</small>"]
-    end
-
-    subgraph API["API 层"]
-        CODEX_API["codex-api<br/><small>Responses API 客户端</small>"]
-        CODEX_CLIENT["codex-client<br/><small>HTTP 传输</small>"]
-        BACKEND["backend-client<br/><small>后端通信</small>"]
-    end
-
-    subgraph Execution["工具与执行层"]
-        APPLY["apply-patch<br/><small>文件修改</small>"]
-        EXECPOLICY["execpolicy<br/><small>命令安全策略</small>"]
-        SANDBOX["linux-sandbox<br/><small>Linux 沙箱</small>"]
-        HARDEN["process-hardening<br/><small>进程强化</small>"]
-        HOOKS["hooks<br/><small>生命周期钩子</small>"]
-        RMCP["rmcp-client<br/><small>MCP 客户端</small>"]
-    end
-
-    CLI --> CORE
-    TUI --> CORE
-    APP --> CORE
-    MCP_S --> CORE
-    EXEC_CLI --> CORE
-    CORE --> PROTO
-    CORE --> CODEX_API
-    CORE --> APPLY
-    CORE --> EXECPOLICY
-    CORE --> HOOKS
-    CORE --> RMCP
-    APP --> APP_PROTO
-    CODEX_API --> CODEX_CLIENT
-    CODEX_API --> PROTO
+    Surface --> CORE
+    CORE --> Proto
+    CORE --> API
+    CORE --> Tools
+    API --> Proto
+    Tools --> Infra
 ```
 
 ## codex-core：197 个源文件的 Agent 引擎
