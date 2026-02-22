@@ -46,26 +46,35 @@ graph LR
 
 从发布到成为行业标准，只用了一年。目前 GitHub 上 [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers) 仓库有 79,000+ stars，SDK 月下载量超过 9700 万次，活跃 MCP Server 超过 10,000 个。
 
-## MCP 和 Tool Loop 的关系
+## Function Calling、Tool Loop、MCP 的关系
 
-在[《AI Agent 的核心引擎：工具循环（Tool Loop）导论》](/posts/ai-agent-tool-loop-introduction/)中，我们拆解了 coding agent 的核心执行模式：
+在开始拆解 MCP 之前，先理清三个容易混淆的概念。
 
-```
-模型推理 → 决定调用工具 → 执行工具 → 结果返回模型 → 继续推理 → …
-```
+**Function Calling** 是 LLM 厂商训练出的模型能力——让模型不只是输出文本，还能输出结构化的函数调用请求（"我想调用 `get_weather(city="北京")`"）。模型自己不执行函数，只是"说"它想调用。
 
-MCP 处于这个循环的**工具执行层**——它不改变 Tool Loop 的控制流，而是标准化了"执行工具"那一步的连接方式：
+**Tool Loop** 是基于 Function Calling 构建的执行模式。在[《AI Agent 的核心引擎：工具循环（Tool Loop）导论》](/posts/ai-agent-tool-loop-introduction/)中我们详细拆解过这个循环：
 
 ```
-模型推理 → 决定调用工具 → [MCP Client → JSON-RPC → MCP Server → 执行] → 结果返回模型
+模型推理 → function call → 执行工具 → 结果返回模型 → 模型推理 → function call → …
 ```
 
-换个方式理解：
+没有 Function Calling，模型只能输出文本，这个循环就不存在。
 
-- **Tool Loop** 回答"agent 怎么思考和行动"——是循环的控制流
-- **MCP** 回答"agent 怎么找到和调用工具"——是工具层的通信标准
+**MCP** 处于 Tool Loop 的**工具执行层**——它标准化了"执行工具"那一步的连接方式：
 
-没有 MCP，Tool Loop 照样跑（工具可以是内置函数）。没有 Tool Loop，MCP 只是一个通信协议。MCP 的价值在于：**当你需要连接外部工具时，不用为每个 agent 和每个工具写定制集成**。
+```
+模型推理 → function call → [MCP Client → JSON-RPC → MCP Server → 执行] → 结果返回模型
+```
+
+三者是自下而上的层次关系：
+
+| 概念 | 层次 | 解决什么 |
+|------|------|---------|
+| **Function Calling** | 模型能力 | 让模型能"说"要调什么函数 |
+| **Tool Loop** | 执行模式 | 把 function call → 执行 → 返回串成循环 |
+| **MCP** | 连接协议 | 标准化循环中"执行"那一步怎么连接外部工具 |
+
+没有 Function Calling，Tool Loop 跑不起来。没有 MCP，Tool Loop 照样跑（工具可以是内置函数）。MCP 的价值在于：**当你需要连接外部工具时，不用为每个 agent 和每个工具写定制集成**。后面的"MCP vs Function Calling"一节会详细对比两者。
 
 ## 核心架构：三个角色
 
