@@ -42,28 +42,23 @@ mermaid: true
 
 一个显著趋势：**开发速度不减反增**。从早期 ~300/月到后期 ~650/月，翻了一倍多。这说明架构做对了——好的抽象能加速而非拖累后续开发。
 
-```mermaid
-timeline
-    title Codex 演进时间线
-    section 阶段一：开源首发
-        4月16日 : TypeScript CLI 首次公开
-        4月24日 : PR #629 引入 Rust 实现
-    section 阶段二：Rust 重写
-        5月1日 : Linux Landlock 沙箱
-        5月9日 : AGENTS.md 取代 instructions.md
-        5月中旬 : MCP server/client 集成
-    section 阶段三：协议与性能
-        7月31日 : /compact 上下文压缩
-        8月11日 : prompt_cache_key 优化
-        8月15日 : codex-protocol crate
-        8月25日 : MCP 工具排序修复缓存
-    section 阶段四：App Server 解耦
-        9月29日 : TypeScript SDK
-        9月30日 : app-server 与 mcp-server 分离
-    section 阶段五：规模化
-        1月9日 : Bazel 构建系统
-        2月17日 : Realtime/Voice API
-```
+**关键里程碑一览：**
+
+| 日期 | 里程碑 | 阶段 |
+|------|--------|------|
+| 4月16日 | TypeScript CLI 首次公开 | 开源首发 |
+| 4月24日 | PR #629 引入 Rust 实现 | 开源首发 |
+| 5月1日 | Linux Landlock 沙箱 | Rust 重写 |
+| 5月9日 | AGENTS.md 取代 instructions.md | Rust 重写 |
+| 5月中旬 | MCP server/client 集成 | Rust 重写 |
+| 7月31日 | /compact 上下文压缩 | 协议与性能 |
+| 8月11日 | prompt_cache_key 优化 | 协议与性能 |
+| 8月15日 | codex-protocol crate | 协议与性能 |
+| 8月25日 | MCP 工具排序修复缓存 | 协议与性能 |
+| 9月29日 | TypeScript SDK | App Server 解耦 |
+| 9月30日 | app-server 与 mcp-server 分离 | App Server 解耦 |
+| 1月9日 | Bazel 构建系统 | 规模化 |
+| 2月17日 | Realtime/Voice API | 规模化 |
 
 ## 阶段一：开源首发（2025 年 4 月 16-30 日）— 261 commits
 
