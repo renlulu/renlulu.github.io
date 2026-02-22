@@ -95,7 +95,7 @@ codex-cli/src/
 
 **1. Agent Loop 直接构建在 OpenAI Responses API 上。** [Responses API](https://platform.openai.com/docs/api-reference/responses) 是 OpenAI 在 2025 年推出的新一代 API，取代了此前的 Chat Completions API。它的核心区别在于：原生支持工具调用（tool use）、多模态输入、以及通过 `previous_response_id` 实现的服务端对话状态管理——这意味着客户端不需要每次都发送完整的消息历史，API 会自动追踪对话上下文。`AgentLoop` 类基于此封装了一个标准的工具循环：调用模型 → 收到 tool_call → 执行工具 → 将结果反馈 → 继续循环。这和我们在上一篇文章中讨论的 `while has_tool_calls(response)` 模式完全一致。
 
-**2. apply_patch 是自定义的文件修改格式。** 不是标准的 unified diff，而是一种更紧凑的格式（`*** Begin Patch` / `*** End Patch`），专为 LLM 生成优化。这是 Codex 的核心工具之一——让模型可以精确修改文件而非重写整个文件。
+**2. apply_patch 是自定义的文件修改格式。** 不是标准的 unified diff，而是一种更紧凑的格式（`\*** Begin Patch` / `\*** End Patch`），专为 LLM 生成优化。这是 Codex 的核心工具之一——让模型可以精确修改文件而非重写整个文件。
 
 **3. 沙箱从 Day 1 就是核心关注点。** 初始版本就包含了 macOS Seatbelt 沙箱实现，通过 `sandbox-exec` 限制文件写入范围。这不是事后补上的安全措施，而是从一开始就内建的设计。
 
