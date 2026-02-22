@@ -1,6 +1,6 @@
 ---
 title: 深入 Codex 的 Rust 内核：69 个 Crate 如何协作完成一次 Agent Loop
-date: 2026-02-22
+date: 2026-02-22 16:00:00 +0800
 categories: [AI]
 tags: [codex, openai, rust, coding-agent, architecture]
 mermaid: true
