@@ -35,7 +35,7 @@ tags: [agents-md, coding-agent, codex, claude-code, cursor, copilot]
 
 ### 起源：从 Codex 的 commit 历史看
 
-在[上一篇文章](/posts/codex-commit-history-analysis/)中，我们分析了 Codex 的 3913 个 commit。其中有一个关键节点：
+在[《解剖 3913 个 Commit：OpenAI Codex 从 0 到 1 的构建之路》](/posts/codex-commit-history-analysis/)中，我们分析了 Codex 的完整 Git 历史。其中有一个关键节点：
 
 > **2025 年 5 月 9 日**（commit [4aacd80fa](https://github.com/openai/codex/commit/4aacd80fa)）：AGENTS.md 取代 instructions.md。
 
