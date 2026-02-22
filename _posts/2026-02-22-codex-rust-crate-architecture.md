@@ -160,46 +160,28 @@ pub struct TurnContext {
 
 ```mermaid
 sequenceDiagram
-    participant User as 用户
-    participant CLI as cli (main.rs)
-    participant TUI as tui
-    participant Core as core (codex.rs)
-    participant Client as client.rs
-    participant API as codex-api
-    participant Router as ToolRouter
-    participant Orch as ToolOrchestrator
-    participant Handler as ShellHandler
-    participant Exec as exec.rs
-    participant Sandbox as SandboxManager
+    participant User as 用户 (CLI/TUI)
+    participant Core as codex-core
+    participant API as codex-api (WebSocket)
+    participant Tools as 工具子系统
+    participant Sandbox as 沙箱 (Seatbelt/Landlock)
 
-    User->>CLI: codex "fix the bug"
-    CLI->>TUI: 启动交互模式
-    TUI->>Core: submit(Op::UserTurnStart)
+    User->>Core: submit(Op::UserTurnStart)
     Core->>Core: run_turn()
 
     loop Agent Loop
-        Core->>Core: 构建 sampling_request_input
-        Core->>Client: run_sampling_request()
-        Client->>API: WebSocket response.create
-        API-->>Client: ResponseEvent stream
-        Client-->>Core: tool_calls / text
+        Core->>API: response.create(消息历史)
+        API-->>Core: 流式返回 tool_calls 或 text
 
-        alt 包含 tool_call
-            Core->>Router: build_tool_call()
-            Router->>Router: 匹配 Handler
-            Core->>Orch: orchestrator.run()
-            Orch->>Orch: 1. 检查审批缓存
-            Orch->>Orch: 2. 选择沙箱策略
-            Orch->>Handler: handler.handle()
-            Handler->>Exec: exec(command, sandbox)
-            Exec->>Sandbox: spawn_child_async()
-            Sandbox-->>Exec: ExecToolCallOutput
-            Exec-->>Handler: 命令输出
-            Handler-->>Core: FunctionCallOutputBody
-            Core->>Core: 将工具结果追加到历史
-        else 纯文本响应
-            Core-->>TUI: 显示助手消息
-            TUI-->>User: 展示结果
+        alt 模型返回 tool_call
+            Core->>Tools: ToolRouter 分发 → Orchestrator 审批
+            Tools->>Sandbox: 在沙箱中执行命令
+            Sandbox-->>Tools: ExecToolCallOutput
+            Tools-->>Core: 工具结果追加到消息历史
+            Note over Core: 继续循环
+        else 模型返回纯文本
+            Core-->>User: 展示助手消息
+            Note over Core: 结束循环
         end
     end
 ```
