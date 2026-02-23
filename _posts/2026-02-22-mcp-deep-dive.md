@@ -500,67 +500,6 @@ Host 必须在调用工具前获得用户确认。工具注解帮助判断风险
 
 Claude Desktop、Claude Code、ChatGPT、Codex CLI、Cursor、VS Code（Copilot）、Windsurf、Zed、Replit 等均已支持 MCP。
 
-## MCP vs Function Calling
-
-一个常见的困惑：MCP 和各家 API 的 Function Calling 是什么关系？
-
-### 先搞清楚 Function Calling 是什么
-
-Function Calling 是 **LLM 厂商在模型层面训练出的能力**——让模型不只是输出文本，还能输出结构化的函数调用请求。
-
-整个链条由三方分工：
-
-| 谁 | 做什么 |
-|---|--------|
-| **LLM 厂商**（OpenAI / Anthropic） | 训练模型理解函数 schema，学会判断"何时该调用哪个函数" |
-| **应用开发者** | 定义有哪些函数、参数是什么、执行什么逻辑 |
-| **模型** | 运行时根据用户输入，从函数列表中选一个调用 |
-
-具体流程：
-
-```python
-# 1. 开发者定义函数列表
-tools = [{
-    "name": "query_order",
-    "description": "查询订单状态",
-    "parameters": { "order_id": { "type": "string" } }
-}]
-
-# 2. 函数列表 + 用户消息一起发给模型 API
-response = client.chat(
-    messages=[{"role": "user", "content": "订单 12345 到哪了"}],
-    tools=tools
-)
-
-# 3. 模型返回的不是文本，而是一个调用请求：
-#    → query_order(order_id="12345")
-#    注意：模型自己不执行，只是"说"它想调用
-
-# 4. 开发者的代码执行真正的查询逻辑
-result = query_order(order_id="12345")
-
-# 5. 把结果返回给模型，模型生成最终回复
-```
-
-关键点：**模型只负责"决定调什么"，不负责"怎么调"和"怎么执行"**。第 1 步（定义函数）和第 4 步（执行函数）都是开发者自己写的代码。
-
-### MCP 改变了什么
-
-MCP 接管的正是开发者需要手写的第 1 步和第 4 步：
-
-- **第 1 步**（定义函数）→ MCP Server 通过 `tools/list` 自动暴露可用工具，Agent 启动时动态发现
-- **第 4 步**（执行函数）→ MCP Server 通过 `tools/call` 接收调用请求并执行，Agent 不需要自己写执行逻辑
-
-| 维度 | Function Calling | MCP |
-|------|-----------------|-----|
-| 层次 | 模型能力（"我知道该调什么"） | 连接协议（"工具在哪、怎么调、结果怎么回来"） |
-| 工具定义 | 开发者手写、API 调用时传入 | MCP Server 暴露、运行时自动发现 |
-| 工具执行 | 开发者自己实现 | MCP Server 封装执行 |
-| 供应商锁定 | 高（每家 API 格式不同） | 无（通用标准） |
-| 扩展性 | 绑定应用 | 每个 Server 独立扩展 |
-
-简单说：**Function Calling 是"点菜"（模型决定调用什么），MCP 是"菜单系统 + 厨房"（标准化工具的发现、调用和执行）**。两者互补——MCP 在底层依赖 Function Calling 让模型触发工具调用，在上层提供了完整的连接和执行协议。
-
 ## 总结
 
 MCP 的设计哲学可以用三个关键词概括：
