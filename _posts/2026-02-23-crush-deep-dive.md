@@ -6,354 +6,211 @@ tags: [coding-agent, crush, go, charm, open-source]
 mermaid: true
 ---
 
-> 读完 Crush 的 263 个 Go 源文件后，我发现了几个出乎意料的设计决策。这不是一篇架构介绍，而是一次对工程细节的深挖。
+> Crush 是 Charm 团队用 Go 构建的终端 AI 编码助手，支持 14+ 个 LLM provider，运行在 8 个操作系统上。读完它的 263 个 Go 源文件后，我想聊聊它的架构设计，以及那些藏在源码里的工程决策。
 
-## 背景
+## Crush 是什么
 
-Crush 是 Charm 团队开源的终端 AI 编码助手，前身是 TermAI（2025 年 3 月）和 OpenCode。3211 个 commit，127 个版本，20,300+ stars。本文不再重复"它有哪些功能"——那些看 README 就够了。我想聊的是：**读完源码后，哪些设计让我觉得"原来如此"或者"居然这样做"**。
+如果你用过 Claude Code 或 Codex CLI，Crush 做的是同样的事情：在终端里和 AI 对话，让它读代码、改代码、跑命令。不同的是，Claude Code 绑定 Anthropic，Codex 绑定 OpenAI，**Crush 不绑定任何厂商**——你可以用 Claude、GPT、Gemini、Deepseek，甚至本地的 Ollama，随时在对话中切换。
 
-## 发现一：它没有 Shell，它是一个 Shell
+项目前身是 Kujtim Hoxha 于 2025 年 3 月创建的 TermAI，4 月改名 OpenCode 并获得社区关注，后因 Charm 公司 acqui-hire 引发归属权争议，最终改名 Crush。截至 2026 年 2 月：3211 个 commit，127 个版本，20,300+ stars。
 
-Crush 的 bash 工具不是你想象的那样工作的。
+## 整体架构
 
-大多数 coding agent 执行 bash 命令的方式很直觉：`exec.Command("bash", "-c", command)` 启动一个子进程。Claude Code 这样做，Codex 也这样做（只是包了一层沙箱）。
+Crush 的代码组织在 `internal/` 下的 50+ 个 package 中。从上到下分为四层：
 
-Crush 不是。它内嵌了一个 **Go 实现的 POSIX Shell 解释器**（[mvdan.cc/sh/v3](https://github.com/mvdan/sh)）：
+```mermaid
+graph TD
+    A["TUI 层<br/><small>Bubble Tea v2 + Lip Gloss</small>"] --> B["App 层<br/><small>Session · Permission · FileTracker</small>"]
+    B --> C["Agent 层<br/><small>Coordinator · SessionAgent · Tools</small>"]
+    C --> D["LLM 层<br/><small>Fantasy（多 Provider）· Catwalk（模型注册）</small>"]
+```
+
+下面按照一个用户输入从进入到执行完毕的完整路径，逐层展开。
+
+## LLM 层：Fantasy + Catwalk
+
+### 为什么需要自建 LLM 抽象
+
+Crush 不像 Claude Code 只对接一家 API。它需要同时支持 Anthropic、OpenAI、Google、Azure、Bedrock、OpenRouter 等 10+ 个 provider，每家的 API 格式、认证方式、特殊参数都不同。Charm 团队为此开发了两个独立库：
+
+- **[Fantasy](https://github.com/charmbracelet/fantasy)**：统一的 LLM 调用接口。一个 `fantasy.Agent` 对象封装了模型选择、工具注册、流式回调
+- **[Catwalk](https://github.com/charmbracelet/catwalk)**：社区维护的模型注册表。一个 JSON 文件记录所有 provider 的模型 ID、定价、上下文窗口
+
+这种分离的好处：新模型上线时，社区在 Catwalk 的 JSON 里加一行配置，Crush 用户无需升级就能使用。
+
+### Provider 抽象的真实代价
+
+多 provider 听起来美好，但源码揭示了一个关键现实：**抽象必然泄漏**。
+
+最典型的例子在 `agent.go` 的 `workaroundProviderMediaLimitations`。当 `view` 工具读取图片后，图片数据需要作为 tool result 返回给模型。但 Anthropic 的 API 支持在 tool result 中携带图片，OpenAI 和 Google 的不支持。Crush 的解决方案：**悄悄重写对话历史**——把图片从 tool result 里抽出来，伪装成紧随其后的 user message。
 
 ```go
-// internal/shell/shell.go
-import (
-    "mvdan.cc/sh/moreinterp/coreutils"
-    "mvdan.cc/sh/v3/interp"
-    "mvdan.cc/sh/v3/syntax"
-)
+// 对非 Anthropic provider：偷渡图片
+textParts = append(textParts, "[Image loaded - see attached]")  // 替换 tool result
+mediaFiles = append(mediaFiles, media)                          // 注入 user message
+```
 
-func (s *Shell) execCommon(ctx context.Context, command string, stdout, stderr io.Writer) error {
-    // 先解析成 AST
-    line, _ := syntax.NewParser().Parse(strings.NewReader(command), "")
-    // 再用解释器执行
-    runner, _ := s.newInterp(stdout, stderr)
-    return runner.Run(ctx, line)
+类似的 provider 专属处理散布在整个 codebase 里：
+
+- Anthropic 需要 `interleaved-thinking` beta header 才能使用思考模式
+- OpenAI 要区分 Chat Completions API 和新的 Responses API
+- OpenRouter 对特定模型追加 `:exacto` 后缀
+- 一个叫 `hyper` 的内部 provider 根据模型名猜测该用哪个 SDK
+
+**教训：多 provider 支持不是写几个 adapter 就行的，而是在每个边缘情况上反复打补丁。**
+
+## Agent 层：SessionAgent + Coordinator
+
+### 核心循环
+
+Crush 的 agent 层围绕两个核心类型：`Coordinator`（编排器）和 `SessionAgent`（会话 agent）。一次用户请求的完整流程：
+
+1. `Coordinator.Run()` 刷新模型配置、准备参数
+2. `SessionAgent.Run()` 检查是否忙碌（忙则入队）、复制可变状态快照、注入 MCP instructions
+3. 创建 `fantasy.Agent`，调用 `agent.Stream()` 开始流式工具循环
+4. 每步结果通过回调更新 UI、保存到 SQLite、检查停止条件
+
+其中"复制可变状态快照"是一个关键设计。`tools`、`largeModel`、`systemPrompt` 都用自定义的 `csync.Value` / `csync.Slice` 包装，在 `Run` 前做原子拷贝。这样运行过程中用户通过 UI 切换模型，不会影响正在执行的请求。
+
+### 三个停止条件
+
+工具循环不是无限跑下去的。Crush 设置了两个 `StopWhen` 条件：
+
+**上下文即将耗尽时自动摘要**：
+
+```go
+remaining := contextWindow - tokens
+if remaining <= threshold && !disableAutoSummarize {
+    shouldSummarize = true
+    return true  // 停止循环
 }
 ```
 
-这意味着什么？
+200K 窗口的模型留 20K 缓冲，小窗口模型留 20%。触发后 agent 自动生成对话摘要替换早期历史，实现"无限对话"。
 
-**1. 命令在 AST 层被拦截，不是在字符串层**
-
-安全命令过滤不是用正则匹配字符串，而是在解释器的 `ExecHandler` 链中拦截。`blockHandler` 在命令被执行之前检查参数：
+**循环检测**：
 
 ```go
-func (s *Shell) blockHandler() func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-    return func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-        return func(ctx context.Context, args []string) error {
-            for _, blockFunc := range s.blockFuncs {
-                if blockFunc(args) {
-                    return fmt.Errorf("command is not allowed: %q", args[0])
-                }
-            }
-            return next(ctx, args)
-        }
-    }
+func hasRepeatedToolCalls(steps []fantasy.StepResult, windowSize, maxRepeats int) bool {
+    // 检查最近 10 步中是否有相同的 tool call 签名出现超过 5 次
+    // 签名 = SHA-256(工具名 + 输入 + 输出)
 }
 ```
 
-用字符串匹配拦截 `curl` 很容易被绕过（`\curl`、`$(echo curl)`），但在 AST 层拦截，解释器已经解析完管道、替换、转义，拿到的是最终要执行的命令和参数。
+如果 agent 连续用相同的参数调同一个工具并得到相同结果，说明它卡住了。80 行代码，简洁有效。
 
-**2. 环境变量和工作目录跨命令持久化**
+### 消息队列
 
-每次执行后，Shell 从解释器同步状态：
+当 agent 正在处理请求时，用户可以继续输入。新消息不会丢失，而是进入 `messageQueue`。更巧妙的是，排队的消息会在下一个 `PrepareStep` 回调中被注入到当前对话中——agent 在工具循环的间隙就能看到用户的新指令，不需要等当前任务完全结束。
+
+### 子 Agent
+
+Crush 有两种 agent：coder（主）和 task（子）。子 agent 通过 `fantasy.NewParallelAgentTool` 创建——主 agent 可以**同时启动多个子 agent 并行工作**，每个有独立的 session 和 cost 追踪。
+
+还有一个特殊的子 agent：`agentic_fetch`。它专门用 **small model**（而非 large model）来分析网页内容，有自己的临时目录和自动批准的权限。用 Haiku 或 GPT-4o-mini 做网页分析，成本可能差 10-20 倍——一个务实的工程决策。
+
+## 工具层：内嵌 POSIX Shell + 20 个工具
+
+### Bash 工具：最让我意外的设计
+
+大多数 coding agent 执行命令的方式很直觉：`exec.Command("bash", "-c", command)` 启动子进程。Claude Code 这样做，Codex 也是（只是外面包了沙箱）。
+
+**Crush 不是。** 它内嵌了一个 Go 实现的 POSIX Shell 解释器（[mvdan.cc/sh](https://github.com/mvdan/sh)）：
 
 ```go
-func (s *Shell) updateShellFromRunner(runner *interp.Runner) {
-    s.cwd = runner.Dir
-    s.env = s.env[:0]
-    for name, vr := range runner.Vars {
-        if vr.Exported {
-            s.env = append(s.env, name+"="+vr.Str)
-        }
-    }
+func (s *Shell) execCommon(ctx context.Context, command string, ...) error {
+    line, _ := syntax.NewParser().Parse(strings.NewReader(command), "")  // 解析为 AST
+    runner, _ := s.newInterp(stdout, stderr)                             // 创建解释器
+    return runner.Run(ctx, line)                                         // 在 Go 进程内执行
 }
 ```
 
-`cd /tmp && export FOO=bar` 之后，下一条命令自动在 `/tmp` 目录下执行，且能看到 `$FOO`。真正的 shell 体验。
+这带来三个后果：
 
-**3. Windows 上也跑 POSIX Shell**
+**AST 级安全拦截**。命令不是用字符串正则匹配，而是在解释器的 ExecHandler 链中被拦截。当解释器解析完管道、变量替换、转义之后，`blockHandler` 拿到的是最终要执行的命令和参数——绕过难度远高于字符串匹配。
 
-在 Windows 上，Crush 启用 Go 实现的 coreutils（`ls`、`cat`、`grep` 等的 Go 纯实现），让 POSIX 命令在没有 bash 的环境下也能工作：
-
-```go
-// internal/shell/coreutils.go
-func init() {
-    if v, err := strconv.ParseBool(os.Getenv("CRUSH_CORE_UTILS")); err == nil {
-        useGoCoreUtils = v
-    } else {
-        useGoCoreUtils = runtime.GOOS == "windows"
-    }
-}
-```
-
-这就是为什么 Crush 能支持 8 个 OS（包括 Android 和 BSD）——它不依赖宿主系统的 shell。代价是和真实 bash 有行为差异，但换来了真正的跨平台一致性。
-
-## 发现二：1 分钟自动升级为后台任务
-
-Crush 的 bash 工具有一个精巧的执行模式：命令开始时是同步的，但如果超过 1 分钟还没完成，**自动升级为后台任务**。
+禁止命令有 60+ 个，分三类：网络工具（curl、wget、ssh 等 20 个）、系统管理（sudo、systemctl 等）、包管理器（apt、brew、pip 全局安装等）。同时还有子命令级过滤——`npm install` 可以，`npm install --global` 不行：
 
 ```go
-const AutoBackgroundThreshold = 1 * time.Minute
-
-// 同步执行，等待完成或超时
-for {
-    select {
-    case <-ticker.C:
-        stdout, stderr, done, execErr = bgShell.GetOutput()
-        if done { break waitLoop }
-    case <-timeout:   // 1 分钟到了
-        break waitLoop
-    case <-ctx.Done(): // 用户取消
-        bgManager.Kill(bgShell.ID)
-        return
-    }
-}
-
-if !done {
-    // 还在跑——保持为后台任务，返回 job ID
-    response := "Command has been moved to background.\nBackground shell ID: " + bgShell.ID
-}
+shell.ArgumentsBlocker("npm", []string{"install"}, []string{"--global"}),
+shell.ArgumentsBlocker("npm", []string{"install"}, []string{"-g"}),
 ```
 
-更妙的是开头的"快速失败检测"：对于显式后台任务，先等 1 秒检查是否立即失败（被禁命令、语法错误等），再告诉用户"后台任务已启动"。这避免了用户拿到一个已经挂了的 job ID。
+**跨命令状态持久化**。每次执行后，Shell 从解释器同步工作目录和环境变量。`cd /tmp && export FOO=bar` 之后，下一条命令自动在 `/tmp` 下执行，且看得到 `$FOO`。
 
-同时还有上限控制：最多 50 个并发后台任务，完成的任务保留 8 小时后自动清理。
+**跨平台一致性**。在 Windows 上自动启用 Go 实现的 coreutils（ls、cat、grep 的纯 Go 版本），让 POSIX 命令在没有 bash 的环境也能工作。这就是 Crush 能支持 8 个 OS（含 Android 和 BSD）的根本原因——它不依赖宿主系统的 shell。
 
-## 发现三：Provider 抽象的真实代价
+### 1 分钟自动后台
 
-Crush 通过 Fantasy 库支持 14+ 个 LLM provider。听起来很美，但源码揭示了一个关键问题：**provider 抽象必然泄漏**。
+Bash 工具还有一个精巧的执行模式：命令开始时是同步的，**超过 1 分钟没完成就自动升级为后台任务**，返回 job ID。用户可以用 `job_output` 查看进度、`job_kill` 终止。
 
-最典型的例子是 `workaroundProviderMediaLimitations`（`agent.go`）。Anthropic 支持在 tool result 中带图片，OpenAI 和 Google 不支持。Crush 的解决方案：
+对于显式后台任务，会先等 1 秒检查是否立即失败（被禁命令、语法错误），避免用户拿到一个已经挂了的 job ID。
 
-```go
-func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Message, model Model) []fantasy.Message {
-    providerSupportsMedia := model.ModelCfg.Provider == "anthropic" ||
-        model.ModelCfg.Provider == "bedrock"
-    if providerSupportsMedia {
-        return messages  // Anthropic 原生支持，不用改
-    }
+### Edit 工具：文件时间锁
 
-    // 对其他 provider：把图片从 tool result 里抽出来，
-    // 伪装成紧随其后的 user message
-    for _, part := range msg.Content {
-        if media := extractMedia(part); media != nil {
-            // 替换 tool result 为文本占位符
-            textParts = append(textParts, "[Image loaded - see attached]")
-            // 注入一条 user message 带上图片
-            mediaFiles = append(mediaFiles, media)
-        }
-    }
-}
-```
+大多数 agent 的 edit 工具是"读内容 → 替换 → 写回去"。Crush 多了两层保护：
 
-这不是 bug，这是**现实**。当你的工具系统同时支持的 `view` 返回图片时，这张图片在 Anthropic 上可以直接作为 tool result 回传，但在 OpenAI/Google 上必须被"偷渡"成 user message。模型看到的对话历史实际上被悄悄重写了。
+**必须先读后改**：如果 agent 没有通过 `view` 工具读过某个文件就试图编辑，直接拒绝。
 
-类似的 provider 特殊处理还有很多：
+**Stale read 检测**：编辑前检查文件的 `modTime` 是否比上次 `view` 的时间更新。如果用户在 agent 读取文件后手动修改了它，编辑操作会被拒绝，防止覆盖用户的手动更改。
 
-- Anthropic 需要 `interleaved-thinking` beta header
-- OpenAI 要区分 Chat Completions API 和 Responses API（`openai.IsResponsesModel()`）
-- OpenRouter 支持 `:exacto` 后缀优化特定模型
-- Google 的 thinking 配置格式和 Anthropic 完全不同
-- `hyper` provider 根据模型名自动推断用哪个 SDK（含 `claude` 用 Anthropic，含 `gpt` 用 OpenAI）
+**SQLite 版本历史**：每次编辑都把文件的前后状态存入 SQLite。不是 git 级别的 diff，而是每次 edit 操作级别的完整快照。这让回滚粒度细到单次工具调用。
 
-**教训：多 provider 支持不是写几个 adapter 的事，而是在每一个边缘情况上反复打补丁。**
+### LSP 集成
 
-## 发现四：三层 Prompt Caching 策略
+`diagnostics`、`references`、`lsp_restart` 三个工具直接调用 LSP server。LSP client 使用 Charm 自己的 [powernap](https://github.com/charmbracelet/x/tree/main/powernap) 库管理，按文件类型懒初始化。
 
-Crush 在 `agent.go` 的 `PrepareStep` 回调中实现了精细的 Anthropic cache control：
+edit 和 multiedit 执行后会自动通知 LSP client 文件变更，等待诊断结果，把编译错误/警告追加到工具响应中。Agent 在下一轮就能看到"刚才的修改引入了一个类型错误"，不需要专门调 diagnostics 工具。
 
-```go
-PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) {
-    // 第 1 层：最后一条 system message 加 cache control
-    for i, msg := range prepared.Messages {
-        if msg.Role == fantasy.MessageRoleSystem {
-            lastSystemRoleInx = i
-        } else if !systemMessageUpdated {
-            prepared.Messages[lastSystemRoleInx].ProviderOptions = cacheControl
-            systemMessageUpdated = true
-        }
-    }
+## Prompt 工程
 
-    // 第 2 层：最后 2 条消息加 cache control
-    if i > len(prepared.Messages)-3 {
-        prepared.Messages[i].ProviderOptions = cacheControl
-    }
-}
-```
+### 392 行 System Prompt
 
-加上之前在 `Run` 方法中的：
+Crush 的 coder prompt 模板有 392 行，用 XML 标签组织成 11 个模块（`<critical_rules>`、`<workflow>`、`<error_handling>` 等）。几个有趣的设计选择：
 
-```go
-// 第 3 层：最后一个 tool 定义加 cache control
-agentTools[len(agentTools)-1].SetProviderOptions(a.getCacheControlOptions())
-```
+**极端自主化**："Don't ask questions — search, read, think, decide, act."——和 Claude Code 更偏协作的风格形成对比。
 
-三层缓存：system prompt → tool 定义 → 最近的对话。这确保了：
-- 不变的 system prompt 只发送一次
-- 工具定义（可能很长）被缓存
-- 最近的对话上下文在连续 tool loop 中被缓存
+**Git 状态注入**：prompt builder 在构建时自动执行 `git branch`、`git status --short`、`git log --oneline -n 3`，注入到 system prompt。Agent 在开始对话时就知道当前分支和最近 commit。
 
-对比 Codex 的教训——他们曾因 MCP 工具排序不稳定导致整个 prompt 缓存失效。Crush 显式排序工具（`slices.SortFunc` 按名称），并在最后一个工具上打缓存标记，规避了这个问题。
+**Context Files 通吃**：自动读取 `.cursorrules`、`CLAUDE.md`、`GEMINI.md`、`AGENTS.md` 等所有主流 agent 的项目指令文件。不要求用户为 Crush 写专门配置——直接复用已有的。
 
-## 发现五：Edit 工具的"文件时间锁"
+### 三层 Prompt Caching
 
-Crush 的 edit 工具有一个大多数 agent 没有的安全机制：**修改前检查文件是否在上次读取之后被外部修改过**。
+Crush 在 Anthropic provider 上实现了精细的 cache control：
 
-```go
-// 必须先读过文件才能编辑
-lastRead := edit.filetracker.LastReadTime(ctx, sessionID, filePath)
-if lastRead.IsZero() {
-    return "you must read the file before editing it. Use the View tool first"
-}
+1. 最后一条 system message 加 cache 标记（system prompt 不变，只发一次）
+2. 最后一个 tool 定义加 cache 标记（工具列表不变，只发一次）
+3. 最近 2 条消息加 cache 标记（连续 tool loop 中对话上下文被缓存）
 
-// 检查文件的 mod time 是否比上次读取更新
-modTime := fileInfo.ModTime().Truncate(time.Second)
-if modTime.After(lastRead) {
-    return fmt.Sprintf("file %s has been modified since it was last read", filePath)
-}
-```
+工具列表还按名称字母序排序——对比 Codex 曾因工具排序不稳定导致整个 prompt 缓存失效，这是一个低成本但高回报的防御措施。
 
-同时，每次编辑都会在 SQLite 中记录文件的完整版本历史：
+## 安全模型
 
-```go
-// 如果用户手动改了文件（mod time 变了），记录中间版本
-if file.Content != oldContent {
-    edit.files.CreateVersion(ctx, sessionID, filePath, oldContent)
-}
-// 记录新版本
-edit.files.CreateVersion(ctx, sessionID, filePath, newContent)
-```
+把上面的发现串起来，Crush 的安全策略就清晰了：
 
-这意味着 Crush 有完整的编辑时间线。当 agent 改坏了文件，你可以回溯到任意一个版本——不是 git 级别的，而是每次编辑操作级别的。
+| 层次 | Crush | Codex |
+|------|-------|-------|
+| Shell | 内嵌 POSIX 解释器 + AST 拦截 | 真实 shell + OS 沙箱（Seatbelt/Landlock） |
+| 命令过滤 | 60+ 禁止命令 + 子命令级过滤 | 沙箱内自由执行 |
+| 文件写入 | Permission prompt + mod time 检查 | 沙箱内自由写 |
+| 网络 | 禁止 curl/wget，专用 fetch 工具 | 沙箱限制网络 |
+| 平台 | 8 个 OS | macOS + Linux |
 
-## 发现六：Agentic Fetch — 用便宜模型做脏活
+没有 OS 级沙箱，这是 Crush 能支持 Android 和 BSD 的原因——不存在跨 8 个 OS 的统一沙箱方案。它用 **POSIX 解释器 AST 拦截 + 精细命令黑名单 + Permission 系统** 来弥补。一个明确的取舍：用安全深度换平台广度。
 
-`agentic_fetch` 不是一个简单的"下载网页"工具，而是一个**完整的子 agent**，使用 **small model**（不是 large model）来分析网页内容：
+## 总结
 
-```go
-func (c *coordinator) agenticFetchTool(...) {
-    // 关键：用 small model 做 web 内容分析
-    _, small, _ := c.buildAgentModels(ctx, true)
+读完 Crush 的源码，我认为它有一个一致的工程哲学：**在每个设计分叉点选择可移植性**。
 
-    agent := NewSessionAgent(SessionAgentOptions{
-        LargeModel: small,  // 注意：两个都是 small
-        SmallModel: small,
-        // ...
-    })
+- 内嵌 POSIX 解释器而非真实 shell → 跨 8 个 OS
+- Permission prompt 而非 OS 沙箱 → 无平台依赖
+- Fantasy 多 provider 抽象 → 不绑定任何厂商
+- Catwalk 社区模型注册 → 新模型上线无需升级
+- 通吃所有竞品的 context files → 零迁移成本
 
-    // 创建独立 session，自动批准所有权限
-    c.permissions.AutoApproveSession(session.ID)
-}
-```
+这个哲学和 Charm 团队的基因一致——他们从 2019 年就在做跨平台终端工具（Bubble Tea 30K stars、Glow 16K stars）。Crush 不是一个碰巧用 Go 写的 Claude Code 替代品，而是 Charm 生态自然延伸出的 AI 编码工具，继承了他们对终端体验和跨平台的执念。
 
-这个子 agent 有自己的独立临时目录、独立 session、自动批准的权限，以及 6 个工具（`web_fetch`、`web_search`、`glob`、`grep`、`sourcegraph`、`view`）。
-
-大网页内容（超过阈值）会先写入临时文件，然后让子 agent 用 `view` 和 `grep` 工具去分析，而不是把整个页面塞进 prompt。
-
-**成本逻辑**：网页分析不需要 Claude Opus 或 GPT-4o 级别的推理能力。用 Haiku 或 GPT-4o-mini 就够了，成本可能差 10-20 倍。这是一个很务实的工程决策。
-
-## 发现七：392 行的 System Prompt
-
-Crush 的 coder prompt 模板（`coder.md.tpl`）有 392 行，是我见过的最详细的 coding agent system prompt 之一。它用 XML 标签组织成 11 个模块：
-
-```
-<critical_rules>     — 13 条不可违反的核心规则
-<communication_style> — 输出风格（<4 行、不用 emoji、一个词就回答）
-<code_references>     — 引用代码时必须用 file:line 格式
-<workflow>            — 每个任务的完整执行流程
-<task_completion>     — 确保任务 100% 完成的检查清单
-<error_handling>      — 遇到错误时的分步排查策略
-<memory_instructions> — 何时更新记忆文件
-<code_conventions>    — 编码规范（先看再改、匹配风格）
-<testing>             — 改完代码必须跑测试
-<tool_usage>          — 工具使用指南
-<proactiveness>       — 自主性边界（做就做完，别问）
-<final_answers>       — 回复长度规则
-```
-
-几个有趣的设计决策：
-
-**"别问，去做"**：
-> Don't ask questions — search, read, think, decide, act. Systematically try alternative strategies until the task is complete or you hit a hard external limit.
-
-这和 Claude Code 的"不确定就问用户"形成鲜明对比。Crush 选择了极端自主化。
-
-**Git 状态注入**：
-prompt builder 在构建 system prompt 时自动执行 `git branch`、`git status --short`、`git log --oneline -n 3`，把结果注入到 prompt 的 `<env>` 段。agent 在开始对话时就知道当前分支、未提交的修改和最近的 commit。
-
-**Context Files 通吃**：
-```go
-var defaultContextPaths = []string{
-    ".github/copilot-instructions.md",
-    ".cursorrules",
-    "CLAUDE.md", "CLAUDE.local.md",
-    "GEMINI.md",
-    "crush.md", "AGENTS.md",
-}
-```
-
-Crush 读取几乎所有竞品的项目指令文件。你为 Claude Code 写的 `CLAUDE.md`，Crush 也会读。这是一个聪明的策略：**不要求用户为 Crush 写专门的指令文件，直接复用他们已有的**。
-
-## 发现八：安全模型的取舍
-
-把所有发现串起来，Crush 的安全策略就清晰了：
-
-| 层次 | Crush | Codex | Claude Code |
-|------|-------|-------|-------------|
-| **Shell** | 内嵌 POSIX 解释器 + AST 拦截 | 真实 shell + OS 沙箱 | 真实 bash |
-| **命令过滤** | 60+ 禁止命令 + 子命令级过滤 | 沙箱内自由执行 | 权限提示 |
-| **文件写入** | Permission prompt + mod time 检查 | 沙箱内自由写 | Permission prompt |
-| **网络** | 禁止 curl/wget + 专用 fetch 工具 | 沙箱限制网络 | Permission prompt |
-| **平台** | 8 个 OS | macOS + Linux | macOS + Linux + WSL |
-
-Crush 没有 OS 级沙箱。这是它能支持 Android 和 BSD 的原因——不存在一个跨 8 个 OS 的统一沙箱方案。但它用 POSIX 解释器的 AST 拦截 + 精细的命令黑名单 + 子命令级参数过滤（比如 `npm install --global` 被禁但 `npm install` 被允许）来弥补。
-
-这是一个明确的取舍：**用安全深度换平台广度**。
-
-被禁止的命令分三类：
-- **网络工具**：curl、wget、ssh、chrome、firefox 等 20 个
-- **系统管理**：sudo、systemctl、crontab 等 11 个
-- **包管理器**：apt、brew、pip、npm（全局安装）等 20+ 个
-
-同时有一个"安全命令"白名单（`git status`、`git diff`、`ls`、`pwd` 等），这些命令不需要权限确认即可执行。
-
-## 发现九：PostHog 遥测
-
-Crush 内置了 PostHog 遥测，数据发送到 `data.charm.land`：
-
-```go
-const (
-    endpoint = "https://data.charm.land"
-    key      = "phc_4zt4VgDWLqbYnJYEwLRxFoaTL2noNrQij0C6E8k3I0V"
-)
-
-var baseProps = posthog.NewProperties().
-    Set("GOOS", runtime.GOOS).
-    Set("GOARCH", runtime.GOARCH).
-    Set("TERM", os.Getenv("TERM")).
-    Set("Version", version.Version)
-```
-
-收集的数据包括 OS、架构、终端类型、版本号、provider、model、token 用量、session 事件等。这在商业工具中很常见，但 Crush 使用的是 FSL-1.1-MIT 许可证（功能性源码许可证，不是传统开源）。结合遥测，Crush 更像是一个"源码可见的商业产品"而非社区开源项目。
-
-## 总结：Crush 的工程哲学
-
-读完代码，我认为 Crush 有一个一致的工程哲学：**在每个设计分叉点，选择"可移植性"而非"极致性能"或"极致安全"**。
-
-- 内嵌 POSIX 解释器而非真实 shell → 可移植
-- Permission prompt 而非 OS 沙箱 → 可移植
-- Fantasy 多 provider 抽象而非单 provider 深度优化 → 可移植
-- Catwalk 社区模型注册而非硬编码 → 可扩展
-- 读取所有竞品的 context files → 兼容
-
-这个哲学和 Charm 团队的 DNA 一致——他们从 2019 年就在做跨平台终端工具。Crush 不是一个"Go 版 Claude Code"，它是 Charm 生态自然延伸出的 AI 编码工具，继承了 Charm 对终端体验和跨平台的执念。
+代价也是真实的：provider 抽象在边缘情况反复泄漏，没有沙箱意味着安全依赖命令黑名单的完备性，内嵌 shell 和真实 bash 存在行为差异。但对于"我想在任何设备上用任何模型写代码"这个需求，Crush 可能是目前唯一认真在做的项目。
 
 ---
 
