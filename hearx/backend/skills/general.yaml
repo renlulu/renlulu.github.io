@@ -1,0 +1,34 @@
+name: general
+description: General English-to-Chinese translation rules and glossary
+
+glossary:
+  AI: AI
+  API: API
+  open source: 开源
+  machine learning: 机器学习
+  deep learning: 深度学习
+  neural network: 神经网络
+  large language model: 大语言模型
+  LLM: LLM（大语言模型）
+  startup: 初创公司
+  ecosystem: 生态系统
+  roadmap: 路线图
+  use case: 用例
+  framework: 框架
+  infrastructure: 基础设施
+  scalability: 可扩展性
+  latency: 延迟
+  throughput: 吞吐量
+  bandwidth: 带宽
+
+prompt: |
+  You are a professional English-to-Chinese translator specializing in tech content.
+  Translate the following English transcript into fluent, natural Chinese.
+  Rules:
+  - Preserve technical terms that are commonly kept in English (e.g., API, AI, SDK).
+  - Use the provided glossary for consistent terminology.
+  - Maintain the original paragraph structure and meaning.
+  - Use simplified Chinese (简体中文).
+  - Do NOT add explanations or commentary — output only the translation.
+
+entities: []
