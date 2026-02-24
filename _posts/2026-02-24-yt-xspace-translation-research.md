@@ -35,6 +35,14 @@ flowchart TD
 | **DevTools + ffmpeg** | 浏览器抓取 m3u8 地址后用 ffmpeg 下载 | 高（手动但稳定） |
 | **OBS 录屏** | 录制系统音频，兜底方案 | 高 |
 
+**实际示例：** [DeFi Development Corp. January 2026 Business Recap & AMA](https://x.com/i/spaces/1vAxRQOgDzPJl) — 一场 Solana 生态上市公司的月度回顾与社区问答，典型的项目方 X Space 格式。
+
+下载命令：
+
+```bash
+yt-dlp -x --audio-format m4a "https://x.com/i/spaces/1vAxRQOgDzPJl"
+```
+
 **X Space 音频特点：**
 - 编码：AAC，~64-128 kbps，单声道
 - 所有说话人混合在一条音轨中，需后期做说话人分离
