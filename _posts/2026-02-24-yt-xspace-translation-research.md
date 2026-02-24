@@ -96,7 +96,7 @@ yt-dlp -x --audio-format m4a "https://x.com/i/spaces/1vAxRQOgDzPJl"
 | **Meta NLLB** | 200 语言，质量低于 LLM |
 | **MarianMT** | 轻量级，质量一般 |
 
-**关键结论：** 币圈内容必须用 LLM 翻译，传统翻译 API 无法正确处理 DeFi、MEV、staking 等专业术语。GPT-4o-mini 成本极低且效果好，是最优选择。
+**关键结论：** 垂直领域内容必须用 LLM 翻译，传统翻译 API 无法正确处理专业术语（如加密货币的 DeFi、MEV，AI 领域的 fine-tuning、RAG 等）。GPT-4o-mini 配合领域 Skill Pack 成本极低且效果好，是最优选择。
 
 ### 币圈术语表示例 (System Prompt)
 
