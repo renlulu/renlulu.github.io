@@ -207,22 +207,53 @@ xychart-beta
 
 **结论：** NotebookLM 适合个人轻度使用（偶尔看几个 YouTube 视频做摘要），但无法满足重度用户的需求（X Space、术语精准度、批量处理）。
 
-### 其他平台
+### X Space 专用工具
 
-| 平台 | 功能 | 价格 | 状态 |
+| 平台 | 功能 | 价格 | 特点 |
 |------|------|------|------|
-| **videoseek.ai** | 链接导入 → 自动翻译 + 摘要 | 付费 | 已停止维护 |
-| **Rask.ai** | 视频翻译 + 配音 + 口型同步 | $60-140/月 | 运营中 |
-| **HeyGen** | AI 视频翻译 + 数字人 | $24-48/月 | 运营中 |
-| **Otter.ai** | 会议转写 | 免费+付费 | 运营中（无翻译） |
-| **Fireflies.ai** | 会议转写 | 免费+付费 | 运营中（无翻译） |
+| [**XspaceGPT**](https://www.twitterspacegpt.com/) | Space 转文字 + 摘要 + 思维导图 | 免费版 / Plus $9.9/月 (10 Spaces) / Pro $14.9/月 (60 Spaces) / 主播版 $49.9/月 (无限) | GPT-4 驱动，支持多语言，可下载 MP3 |
+| [**Flowjin**](https://www.flowjin.com/) | Space 下载 + 转写 + 摘要 + 推文生成 | **$99 一次性买断**（终身无限） | 36+ 语言，99% 准确率，说话人标签，性价比极高 |
+| [**TwSpaceTool**](https://chromewebstore.google.com/detail/twspacetool-download-tran/kafdajbhkclfphkjajojcebnmabnfiak) | Chrome 插件，一键下载 + 转写 + 摘要 | 下载永久免费，转写 120 分钟免费 | 浏览器插件，最轻量的方案 |
+
+### YouTube 翻译 / 双语字幕工具
+
+| 平台 | 功能 | 价格 | 特点 |
+|------|------|------|------|
+| [**沉浸式翻译**](https://immersivetranslate.com/) (Immersive Translate) | 网页/视频/PDF 双语翻译 | 免费版可用 / Pro $6.9/月 | 支持 YouTube/Netflix 双语字幕，Pro 版有 AI 字幕模式（无 CC 也能翻），国内用户首选 |
+| [**Trancy**](https://www.trancy.org/) | YouTube/Netflix AI 双语字幕 | 免费版 / Premium 付费 | AI 转写无字幕视频（40 个/天），句子分段优化 |
+| [**小牛视频翻译**](https://gitee.com/xiaoniu-video-handling/xiaoniu) | 本地视频翻译 + 字幕翻译 + YouTube 下载翻译 | 开源 | 集成 ASR + 多语言翻译，适合本地部署 |
+
+### 视频翻译 + 配音平台
+
+| 平台 | 功能 | 价格 | 特点 |
+|------|------|------|------|
+| [**Rask.ai**](https://www.rask.ai/) | 视频翻译 + 配音 + 口型同步 | $60-140/月 | 130+ 语言，语音克隆 |
+| [**HeyGen**](https://www.heygen.com/) | AI 视频翻译 + 数字人 | $24-48/月 | 175+ 语言，口型同步 |
+| [**Vozo.ai**](https://www.vozo.ai/) | 视频翻译 + 配音 + 口型同步 | ~$19-29/月起 | LipREAL 口型技术，110+ 语言 |
+| [**Synthesia**](https://www.synthesia.io/) | AI 视频生成 + 翻译配音 | 付费 | 130+ 语言，AI 数字人 |
+| [**ElevenLabs**](https://elevenlabs.io/) | 音频翻译 + 语音克隆 | 按用量付费 | 29 语言，业界最佳语音质量 |
+
+### 音频转写平台
+
+| 平台 | 功能 | 价格 | 特点 |
+|------|------|------|------|
+| [**Sonix**](https://sonix.ai/) | 音频/视频转写 + 翻译 | 按分钟付费，30 分钟免费 | 53+ 语言转写，54+ 语言翻译，5-6 分钟处理 1 小时音频 |
+| [**Otter.ai**](https://otter.ai/) | 会议转写 | 免费+付费 | 实时转写，无翻译功能 |
+| [**Fireflies.ai**](https://fireflies.ai/) | 会议转写 | 免费+付费 | 会议专用，无翻译功能 |
+
+### 已停止维护
+
+| 平台 | 功能 | 备注 |
+|------|------|------|
+| **videoseek.ai** | 链接导入 → 自动翻译 + 摘要 | 已停止维护 |
 
 ### 市场空白
 
-- **没有专门针对币圈/Web3 的翻译平台**
-- 通用平台不处理币圈术语，翻译质量差
-- NotebookLM 覆盖了 YouTube 摘要场景，但不支持 X Space 和精准翻译
-- 部分早期平台（如 videoseek.ai）已停止维护
+- **没有专门针对币圈/Web3 的翻译平台**，通用平台不处理币圈术语
+- X Space 工具（XspaceGPT、Flowjin）解决了转写问题，但**翻译到中文不是核心功能**
+- 沉浸式翻译覆盖了 YouTube 双语字幕场景，但**不支持 X Space**
+- 视频配音平台（Rask.ai、HeyGen）功能强大但**价格高、偏重配音而非文稿翻译**
+- 综合来看：**"X Space + YouTube → 精准中文文稿 + 币圈术语"** 这个组合仍是空白
 
 ## 结论与建议
 
