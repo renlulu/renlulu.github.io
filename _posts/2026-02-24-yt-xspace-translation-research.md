@@ -14,7 +14,7 @@ mermaid: true
 flowchart TD
     A["CAPTURE 获取音频<br/>YouTube URL / X Space URL<br/>→ yt-dlp / twspace-dl → audio.m4a"] --> B["PREPROCESS 预处理<br/>ffmpeg → 16kHz mono WAV<br/>可选：降噪、音量归一化、VAD 裁剪"]
     B --> C["ASR + 说话人分离<br/>Whisper API / WhisperX / AssemblyAI<br/>→ 带时间戳、说话人标签的英文文稿"]
-    C --> D["TRANSLATION 翻译<br/>GPT-4o-mini / GPT-4o + 币圈术语表<br/>→ 保留说话人标签的中文翻译"]
+    C --> D["TRANSLATION 翻译<br/>GPT-4o-mini / GPT-4o + 领域 Skill Pack<br/>→ 保留说话人标签的中文翻译"]
     D --> E["OUTPUT 输出<br/>中文文稿 / 双语字幕 / 内容框架摘要<br/>可选：中文语音合成 TTS"]
 ```
 
@@ -79,12 +79,12 @@ yt-dlp -x --audio-format m4a "https://x.com/i/spaces/1vAxRQOgDzPJl"
 
 ### 云服务 API
 
-| 服务商 | 1小时内容翻译成本 | 币圈术语处理 |
+| 服务商 | 1小时内容翻译成本 | 专业术语处理 |
 |--------|-----------------|------------|
 | **GPT-4o-mini + 术语表** | **~$0.02** | 优秀（可自定义 prompt） |
 | **GPT-4o + 术语表** | ~$0.15-0.25 | 最佳 |
 | **Claude API** | ~$0.15-0.30 | 优秀 |
-| **DeepL API** | ~$1.25 | 一般（不懂币圈术语） |
+| **DeepL API** | ~$1.25 | 一般（不支持领域术语定制） |
 | **Google Translate API** | ~$1.00 | 一般 |
 | **Azure Translator** | ~$0.50 | 一般 |
 
@@ -92,13 +92,13 @@ yt-dlp -x --audio-format m4a "https://x.com/i/spaces/1vAxRQOgDzPJl"
 
 | 方案 | 说明 |
 |------|------|
-| **Qwen 2.5 (32B/72B)** | 阿里双语模型，中文能力强，币圈术语可通过 prompt 定制 |
+| **Qwen 2.5 (32B/72B)** | 阿里双语模型，中文能力强，领域术语可通过 prompt 定制 |
 | **Meta NLLB** | 200 语言，质量低于 LLM |
 | **MarianMT** | 轻量级，质量一般 |
 
 **关键结论：** 垂直领域内容必须用 LLM 翻译，传统翻译 API 无法正确处理专业术语（如加密货币的 DeFi、MEV，AI 领域的 fine-tuning、RAG 等）。GPT-4o-mini 配合领域 Skill Pack 成本极低且效果好，是最优选择。
 
-### 币圈术语表示例 (System Prompt)
+### 领域术语表示例：Crypto/Web3 (System Prompt)
 
 ```text
 翻译时请使用以下标准术语：
@@ -169,7 +169,7 @@ xychart-beta
 | **音质差** | 手机麦 + 蓝牙 + 64kbps 压缩 | 预处理降噪 (RNNoise)，选高容错 ASR 模型 |
 | **非正式口语** | 不完整句子、打断、口头禅 | LLM 翻译可理解上下文，优于传统翻译 |
 | **工具不稳定** | X 频繁改 API，下载工具会失效 | 多备选方案 (yt-dlp / twspace-dl / 手动) |
-| **币圈黑话** | DeFi、MEV 等专业术语 | LLM + 自定义术语表 |
+| **领域术语** | DeFi、MEV 等专业术语 | LLM + Skill Pack 术语表 |
 | **内容长度** | 2 小时 Space ≈ 20,000+ 词 | 分块翻译，保持上下文连贯 |
 
 ## 竞品分析
@@ -198,7 +198,7 @@ xychart-beta
 |------|-----------|---------|
 | YouTube 支持 | 直接粘链接，体验好 | yt-dlp 下载，需技术操作 |
 | X Space 支持 | **不支持** | yt-dlp / twspace-dl 支持 |
-| 翻译质量（币圈） | 通用 AI，术语不可控 | LLM + 币圈术语表，更精准 |
+| 翻译质量（垂直领域） | 通用 AI，术语不可控 | LLM + Skill Pack，术语精准 |
 | 摘要/框架整理 | 内置，体验优秀 | 需额外一步 LLM prompt |
 | 批量自动化 | 不支持 | 可脚本化，支持批量 |
 | 成本 | 免费版有限额，Plus $19.99/月 | ~$0.38/小时，按量付费无限额 |
