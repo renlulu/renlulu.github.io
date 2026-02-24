@@ -2,11 +2,11 @@
 title: "YouTube / X Space 英译中：技术方案与成本调研"
 date: 2026-02-24 12:00:00 +0800
 categories: [AI]
-tags: [翻译, ASR, Whisper, LLM, Web3]
+tags: [翻译, ASR, Whisper, LLM, 产品设计]
 mermaid: true
 ---
 
-> 币圈投资者需要紧跟项目方动态，但大量 AMA、市政厅会议、X Space 都是英文内容。对于非英语母语者，听完一场 1-2 小时的英文直播费时费力。本文从技术和成本角度系统调研将 YouTube 视频和 X Space 音频翻译成中文的可行方案。
+> 大量高价值内容以英文音视频形式存在于 YouTube 和 X Space 中——项目方 AMA、行业会议、技术分享、投资者电话会。对于非英语母语者，听完一场 1-2 小时的英文直播费时费力。本文从技术和成本角度系统调研将英文音视频翻译成中文的可行方案，并提出一个"通用引擎 + 领域技能包"的产品架构。
 
 ## 技术管线总览
 
@@ -249,19 +249,154 @@ xychart-beta
 
 ### 市场空白
 
-- **没有专门针对币圈/Web3 的翻译平台**，通用平台不处理币圈术语
 - X Space 工具（XspaceGPT、Flowjin）解决了转写问题，但**翻译到中文不是核心功能**
 - 沉浸式翻译覆盖了 YouTube 双语字幕场景，但**不支持 X Space**
 - 视频配音平台（Rask.ai、HeyGen）功能强大但**价格高、偏重配音而非文稿翻译**
-- 综合来看：**"X Space + YouTube → 精准中文文稿 + 币圈术语"** 这个组合仍是空白
+- 所有通用平台都**不处理垂直领域术语**，专业内容翻译质量差
+- 综合来看：**"YouTube + X Space → 高质量中文文稿 + 领域术语精准翻译"** 这个组合仍是空白
 
-## 结论与建议
+## 产品方向：通用引擎 + 领域技能包
+
+### 核心思路
+
+不做"币圈翻译工具"，而是做一个**通用的英文音视频→中文翻译引擎**，通过可插拔的 **Skill Pack（领域技能包）** 来适配不同垂直场景。
+
+```mermaid
+flowchart TD
+    subgraph 通用引擎
+        A["音频获取<br/>YouTube / X Space / 音频文件"] --> B["ASR 语音转文字<br/>Whisper API"]
+        B --> C["LLM 翻译引擎<br/>GPT-4o-mini"]
+        C --> D["输出<br/>中文文稿 / 字幕 / 摘要"]
+    end
+
+    subgraph "Skill Pack 领域技能包"
+        S1["Crypto/Web3<br/>专名库 + 上下文 prompt"]
+        S2["AI/Tech<br/>技术术语"]
+        S3["Finance<br/>金融术语"]
+        S4["Gaming<br/>游戏术语"]
+        S5["...更多领域"]
+    end
+
+    S1 -->|注入| C
+    S2 -->|注入| C
+    S3 -->|注入| C
+    S4 -->|注入| C
+    S5 -->|注入| C
+```
+
+### Skill Pack 架构
+
+每个 Skill Pack 包含三个组件：
+
+| 组件 | 作用 | 示例 (Crypto/Web3) |
+|------|------|-------------------|
+| **专名库** (Glossary) | 术语映射表，确保翻译一致性 | staking→质押, MEV→最大可提取价值, FDV→完全稀释估值 |
+| **上下文 Prompt** | 告诉 LLM 内容的领域背景 | "这是一场加密货币项目的 AMA，涉及 DeFi 协议和代币经济学" |
+| **实体规则** (Entity Rules) | 定义哪些实体不翻译、如何处理 | 代币名保留原文 (SOL, ETH)，协议名保留原文 (Uniswap, Aave)，人名音译 |
+
+### Skill Pack 示例
+
+#### Crypto/Web3 Skill
+
+```yaml
+name: crypto-web3
+description: 加密货币与 Web3 领域
+
+context_prompt: |
+  你正在翻译一场加密货币/Web3 领域的英文讨论。
+  请注意：代币名称、协议名称、项目名称保留英文原文。
+  使用下方专名库中的标准译法。
+
+glossary:
+  # 基础概念
+  staking: 质押
+  DeFi: 去中心化金融
+  CeFi: 中心化金融
+  DEX: 去中心化交易所
+  CEX: 中心化交易所
+  AMM: 自动做市商
+  TVL: 总锁仓量
+  yield farming: 流动性挖矿
+  liquidity pool: 流动性池
+  impermanent loss: 无常损失
+
+  # 代币经济
+  tokenomics: 代币经济学
+  FDV: 完全稀释估值
+  market cap: 市值
+  vesting: 锁仓释放
+  airdrop: 空投
+
+  # 技术
+  mainnet: 主网
+  testnet: 测试网
+  layer 2: 二层网络
+  rollup: Rollup
+  bridge: 跨链桥
+  oracle: 预言机
+  gas fee: Gas 费
+  smart contract: 智能合约
+  consensus: 共识机制
+
+  # 治理
+  governance: 治理
+  DAO: DAO
+  proposal: 提案
+  on-chain voting: 链上投票
+  whitepaper: 白皮书
+
+entity_rules:
+  - type: token_name
+    action: keep_original  # SOL, ETH, BTC 保留原文
+  - type: protocol_name
+    action: keep_original  # Uniswap, Aave 保留原文
+  - type: person_name
+    action: transliterate  # Vitalik → 维塔利克
+```
+
+#### AI/Tech Skill（示例）
+
+```yaml
+name: ai-tech
+description: 人工智能与技术领域
+
+context_prompt: |
+  你正在翻译一场 AI/技术领域的英文讨论。
+  技术术语使用业界通用的中文译法，模型名和框架名保留英文。
+
+glossary:
+  large language model: 大语言模型
+  fine-tuning: 微调
+  inference: 推理
+  training: 训练
+  prompt engineering: 提示工程
+  retrieval augmented generation: 检索增强生成
+  embedding: 嵌入/向量化
+  transformer: Transformer
+  attention mechanism: 注意力机制
+  hallucination: 幻觉
+  context window: 上下文窗口
+  agent: 智能体
+  multimodal: 多模态
+  benchmark: 基准测试
+  open source: 开源
+  latency: 延迟
+  throughput: 吞吐量
+
+entity_rules:
+  - type: model_name
+    action: keep_original  # GPT-4, Claude, Llama 保留原文
+  - type: framework_name
+    action: keep_original  # PyTorch, TensorFlow 保留原文
+  - type: company_name
+    action: keep_original  # OpenAI, Anthropic 保留原文
+```
 
 ### 核心发现
 
-1. **API 成本极低**：每小时内容翻译成本不到 $0.50
-2. **LLM 翻译远优于传统翻译**：GPT-4o-mini 配合术语表，成本仅 $0.02/小时，效果好
-3. **币圈是未被满足的细分市场**：没有稳定运营的专业平台
+1. **API 成本极低**：每小时内容翻译成本不到 $0.50，规模化完全可行
+2. **LLM 翻译远优于传统翻译**：GPT-4o-mini 配合领域 Skill Pack，成本仅 $0.02/小时，效果好
+3. **通用引擎 + Skill Pack 模式**：一套引擎服务所有领域，Skill Pack 可以社区贡献、持续扩展
 
 ### 推荐技术栈
 
@@ -269,7 +404,7 @@ xychart-beta
 flowchart LR
     A["yt-dlp<br/>下载音频"] --> B["ffmpeg<br/>16kHz WAV"]
     B --> C["Whisper API<br/>$0.36/hr"]
-    C --> D["GPT-4o-mini<br/>+ 币圈术语表<br/>$0.02/hr"]
+    C --> D["GPT-4o-mini<br/>+ Skill Pack<br/>$0.02/hr"]
     D --> E["中文文稿<br/>时间戳<br/>框架摘要"]
 ```
 
@@ -277,11 +412,21 @@ flowchart LR
 
 ### MVP 功能设计
 
-1. 输入 YouTube / X Space 链接
-2. 自动下载音频 → 转写 → 翻译
-3. 输出带时间戳的中文文稿
-4. 自动生成内容框架/摘要
-5. 可选：双语对照字幕
+1. 输入 YouTube / X Space 链接（或上传音频文件）
+2. 选择领域 Skill Pack（或使用通用模式）
+3. 自动下载音频 → 转写 → 领域感知翻译
+4. 输出带时间戳的中文文稿
+5. 自动生成内容框架/摘要
+6. 可选：双语对照字幕
+
+### 扩展路线
+
+| 阶段 | 目标 |
+|------|------|
+| **v0.1 MVP** | 通用翻译引擎 + Crypto/Web3 Skill Pack，支持 YouTube + X Space |
+| **v0.2** | 新增 AI/Tech Skill Pack，支持音频文件上传 |
+| **v0.3** | 开放 Skill Pack 自定义，用户可创建和分享自己的领域包 |
+| **v1.0** | Skill Pack 市场，社区贡献 + 评分机制 |
 
 ---
 
