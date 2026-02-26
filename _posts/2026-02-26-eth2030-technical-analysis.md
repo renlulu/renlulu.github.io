@@ -4,9 +4,6 @@ date: 2026-02-26 08:00:00 +0800
 categories: [AI]
 tags: [ethereum, claude-code, ai-coding, go, blockchain]
 mermaid: true
-image:
-  path: /images/eth2030-strawmap.png
-  alt: 以太坊 L1 Strawmap — EF Protocol 团队维护，strawmap.org
 ---
 
 > 本文基于 [jiayaoqijia/eth2030](https://github.com/jiayaoqijia/eth2030) 仓库源码分析编写。
@@ -39,7 +36,10 @@ image:
 
 ### 从 Strawmap 说起
 
-以太坊基金会 Protocol 团队维护了一张 [L1 Strawmap](https://strawmap.org)（路线图草案），规划了从 2026 到 2030+ 的升级路径。它不是官方承诺，而是一个"加速主义协调工具" —— 给所有客户端团队一个共同的方向参考。
+以太坊基金会 Protocol 团队维护了一张 [L1 Strawmap](https://strawmap.org)（路线图草案），规划了从 2026 到 2030+ 的升级路径。
+
+![以太坊 L1 Strawmap](/images/eth2030-strawmap.png)
+_以太坊 L1 Strawmap — EF Protocol 团队维护，strawmap.org_它不是官方承诺，而是一个"加速主义协调工具" —— 给所有客户端团队一个共同的方向参考。
 
 路线图分三层，八个升级阶段：
 
