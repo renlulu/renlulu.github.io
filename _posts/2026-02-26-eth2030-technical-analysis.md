@@ -1,6 +1,6 @@
 ---
 title: 用 AI 一周写 71 万行 Go：ETH2030 以太坊客户端技术解析
-date: 2026-02-26 19:00:00 +0800
+date: 2026-02-26 14:00:00 +0800
 categories: [AI]
 tags: [ethereum, claude-code, ai-coding, go, blockchain]
 mermaid: true
