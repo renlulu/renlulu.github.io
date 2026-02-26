@@ -265,190 +265,93 @@ graph TB
 
 ## 第二部分：ETH2030 代码解析
 
-### 整体架构
+第一部分讲了"以太坊想做什么"，这一部分看 ETH2030 是怎么把这些想法变成 Go 代码的。不逐包罗列，而是聚焦几个有意思的设计决策。
 
-ETH2030 的架构遵循以太坊客户端的标准分层，50 个 Go 包构成一个完整的执行客户端：
+### 最聪明的决策：站在 go-ethereum 的肩膀上
 
-```mermaid
-graph TB
-    CL["Consensus Client (CL)"]
-    EA["Engine API Server<br/>V3-V7, 50+ JSON-RPC"]
-    BB[Block Builder]
-    BV[Block Validator]
-    SP["State Processor<br/>Sequential → Parallel via BAL"]
-    EVM["go-ethereum EVM v1.17.0<br/>+ 13 custom precompiles"]
-    SDB[StateDB]
-    TV["Trie / Verkle<br/>MPT + Binary + Verkle"]
-    KV[Key-Value Store]
+从零写一个能跑通 36,126 个 EF 状态测试的 EVM 需要多久？go-ethereum 用了十年。ETH2030 的做法是：**不重复造这个轮子。**
 
-    CON["Consensus Layer<br/>3SF, Quick Slots, Attestations"]
-    TP["Transaction Pool<br/>+ Encrypted / Sharded"]
-    P2P["P2P / Sync<br/>Discovery V5, Portal, Snap"]
-    DAS["PeerDAS<br/>Sampling, Custody, Erasure"]
+`pkg/geth/` 是整个项目里最短的包 —— 只有 8 个文件、~50KB。但它是最关键的。这个薄适配层将 go-ethereum v1.17.0 作为 Go module 直接引入，用 `gethcore.ApplyMessage()` 执行交易，然后通过 `evm.SetPrecompiles()` 注入 ETH2030 自定义的 13 个预编译合约（NTT、NII 字段运算等 2030 路线图需要的新预编译）。
 
-    CL -->|JSON-RPC| EA
-    EA --> BB
-    EA --> BV
-    BB --> SP
-    BV --> SP
-    SP --> EVM
-    EVM --> SDB
-    SDB --> TV
-    TV --> KV
-    SDB -.-> TP
-    TV -.-> P2P
-    SP -.-> CON
-    P2P -.-> DAS
+这个决策解锁了两件事：
+
+1. **立即获得 100% EF 合规** — 不用自己处理 SSTORE gas 计量的 17 种边界情况、不用实现 EIP-158 空账户清理、不用调试 CREATE2 地址冲突。这些是真正吃人的细节。
+2. **可以专注于 2030 特性** — 共识层、DAS、ePBS、zkVM，这些是路线图的核心，也是 ETH2030 真正要探索的领域。
+
+go.mod 只有 5 个直接依赖，`eth2030-geth` 二进制已验证可连接 Sepolia 测试网以 ~9K headers/sec 同步。
+
+与此同时，ETH2030 在 `pkg/core/vm/` 也保留了一套完整的原生 EVM（164+ 操作码、24 个预编译、EOF 支持）。两套 EVM 并存：**geth 集成层用于真实网络同步，原生实现用于研究和扩展。** 这是一个很务实的分层。
+
+### 用代码建模共识：从 Gasper 到 3SF
+
+`pkg/consensus/` 是最大的包（201 个文件，2.2MB），但它的核心逻辑反而很紧凑。
+
+3SF 的本质是：**每个 slot 都做一次投票，够了就立刻确认，不用等一整个 epoch。** ETH2030 的 SSF 引擎（`ssf.go`）正是这个思路 —— 每个 slot 维护一个投票跟踪器，按 block root 累加质押权重，一旦某个 root 超过 2/3 就标记 finalized。
+
+有意思的是围绕这个核心展开的模块设计。共识不是一个孤立的投票器，它需要：
+
+- **谁来投票？** → `committee_rotation.go` 动态轮换验证者委员会
+- **投票怎么传播？** → `attestation_aggregator.go` 聚合去重
+- **出块变快了怎么办？** → `quick_slots.go` 处理 6 秒 slot 下的时序问题
+- **分叉了选哪条链？** → `forkchoice.go` 实现 LMD-GHOST
+- **epoch 到了做什么？** → `epoch_transition.go` 处理 shuffle、奖惩、余额更新
+
+这些模块各自独立，但通过共享的 `BeaconState` 类型串联起来。这种建模方式有一个价值：**它把共识 spec 中散落在各处的文字描述，变成了可以追踪依赖关系的代码。** 比如你想知道"6 秒 slot 对 attestation 聚合有什么影响"，在 spec 里要对照多个文档，在代码里直接看调用链就行。
+
+### 格密码的完整实现
+
+`pkg/crypto/pqc/` 是技术密度最高的部分。ETH2030 没有简单地封装一个 PQ 库，而是从多项式运算开始实现了 Dilithium-3：
+
+- 多项式环 Z_q\[X\]/(X^N+1) 上的运算，参数 N=256, Q=8380417
+- NTT 加速多项式乘法
+- Fiat-Shamir with Aborts 签名流程（拒绝采样 —— 如果签名泄露了私钥信息就丢弃重来）
+- 完整的 keygen → sign → verify 流程
+
+除 Dilithium 外还实现了 Falcon512（NTRU 格）、SPHINCS+（纯哈希）和 ML-DSA-65（FIPS 204）。
+
+更值得注意的是 **Hybrid Signer** —— 同时生成 ECDSA 和后量子签名，验证时两个都过才算通过。这不只是一个技术 demo，而是路线图中实际的迁移策略：在量子计算机还不够强的过渡期，hybrid 模式让系统同时受到经典和后量子两套密码学的保护。
+
+### RISC-V 模拟器：zkVM 的基石
+
+zkVM 的落地需要先回答一个问题：**用什么指令集？** 以太坊社区的共识是 RISC-V，因为它开放、简单、工具链成熟。
+
+ETH2030 在 `pkg/zkvm/riscv_cpu.go` 里实现了一个 RV32IM 模拟器 —— 32 个通用寄存器、完整的 R/I/S/B/U/J 类型指令解码、M 扩展（乘除法）。关键的是它不仅仅是一个 CPU 模拟器，还集成了 **witness 收集** —— 每条指令执行时记录输入输出，这些 witness 是后续生成零知识证明的原材料。
+
+围绕这个模拟器，还构建了：
+
+- **Poseidon 哈希**（ZK-friendly 的哈希函数，在证明电路中比 SHA-256 高效几个数量级）
+- **STF 执行器**（将以太坊状态转换编译为 RISC-V 程序执行）
+- **3-of-5 证明聚合**（`pkg/proofs/`，支持 SNARK/STARK/IPA/KZG 四种证明方案，要求至少 3 种通过）
+
+这个证明聚合框架直接对应了路线图中 K\* 阶段的"mandatory 3-of-5 proofs" —— 用多方案冗余来对冲单一证明系统的未知漏洞风险。
+
+### PeerDAS：纠删码 + 采样的工程实现
+
+`pkg/das/` 的核心在 `erasure/` 子包 —— 一个基于有限域 Lagrange 插值的 Reed-Solomon 编解码实现。原理在第一部分已经讲过，这里看工程层面：
+
+ETH2030 将 DAS 拆成了清晰的管道：
+
+```
+Blob → Reed-Solomon 编码 → 列分配(Custody Group) → 采样验证 → 恢复
 ```
 
-一个关键设计：**双层执行架构**。ETH2030 同时维护了一套原生 EVM 和一个 go-ethereum 集成层 —— 原生实现用于研究和原型验证，go-ethereum 集成层用于真实网络同步。
+每一步都是独立可测的模块。`sampling.go` 根据 node ID 计算 custody group 到列索引的映射；`custody_proofs.go` 处理证明生成和验证；`blob_streaming.go` 解决大 blob 的流式传输问题；`futures.go` 实现了 blob 空间的提前预定机制。
 
-### 双层 EVM：原生 + go-ethereum
+这种拆法让每个模块都可以单独跑测试，也让读者可以逐层理解 PeerDAS 从 spec 到实现的映射。
 
-#### 原生 EVM
+### ePBS + FOCIL：两个互锁的协议
 
-`pkg/core/vm/` 下是一个从零实现的 EVM 解释器：
+ePBS 和 FOCIL 的实现虽然分属两个包，但它们在概念上是互锁的 —— ePBS 解决"谁来构建区块"（协议内竞拍替代 MEV-Boost），FOCIL 解决"如何防止构建者审查"（验证者强制包含列表）。
 
-- **164+ 个操作码**，覆盖 Frontier 到 Prague 的所有指令
-- **24 个预编译合约**，包括 BN254 配对、BLS12-381、BLAKE2
-- **EOF 支持**（EIP-3540），容器格式、EOFCREATE
-- 完整的 gas 计算表（`gas_table.go`，33KB）
-- 跳转表按 fork 管理（Frontier、Istanbul、Berlin、Shanghai……）
+ETH2030 的 `pkg/epbs/auction.go` 将构建者出价排序后选最高者；`pkg/focil/` 的 compliance check 确保选出的构建者必须包含验证者指定的交易。两个包通过共享的 Block 类型交互 —— 构建者构建的 payload 必须满足 FOCIL 约束才能被接受。
 
-#### go-ethereum 集成层
+### 数字背后的架构
 
-`pkg/geth/` 是一个仅 ~50KB 的薄适配层（8 个文件）：
+回过头看 ETH2030 的 50 个包，一个有趣的观察是：**它们之间的依赖关系基本是单向的。**
 
-| 文件 | 功能 |
-|------|------|
-| `processor.go` | 使用 `gethcore.ApplyMessage()` 执行交易 |
-| `extensions.go` | 通过 `evm.SetPrecompiles()` 注入 13 个自定义预编译 |
-| `statedb.go` | 桥接 go-ethereum 的 trie DB |
-| `config.go` | ETH2030 fork 参数映射到 go-ethereum chain config |
+底层包（`rlp`、`ssz`、`crypto`）不依赖任何其他包。中间层（`core/vm`、`core/state`、`trie`）只依赖底层。上层协议（`consensus`、`das`、`epbs`、`focil`）依赖中间层但互不依赖。最顶层的 `engine` 和 `rpc` 将所有组件粘合在一起。
 
-通过引入 go-ethereum v1.17.0 作为库依赖，ETH2030 复用了 geth 经过多年实战验证的 EVM 执行引擎，同时在上层构建自己的共识、DAS、ePBS 等新特性。36,126 个 EF 状态测试通过这个集成层全部通过。
-
-go.mod 非常干净，只有 5 个直接依赖：
-
-```
-github.com/crate-crypto/go-eth-kzg v1.5.0
-github.com/ethereum/go-ethereum v1.17.0
-github.com/holiman/uint256 v1.3.2
-github.com/supranational/blst v0.3.16
-golang.org/x/crypto v0.48.0
-```
-
-`eth2030-geth` 二进制已验证可连接 Sepolia 测试网（通过 Lighthouse 共识客户端），以 ~9K headers/sec 的速度同步。
-
-### 共识层实现
-
-`pkg/consensus/` 是最大的包 —— 201 个文件，2.2MB，实现了路线图中的 3SF 及相关特性。
-
-**SSF 投票引擎**（`ssf.go`）：每个 slot 维护一个投票跟踪器。验证者的投票按 block root 聚合质押权重，当某个 root 的累计质押超过总质押的 2/3 时，该 slot 被标记为 finalized。这是 3SF 的核心逻辑。
-
-**完整的共识模块列表：**
-
-| 模块 | 功能 |
-|------|------|
-| `ssf.go` | SSF 投票引擎，2/3 质押阈值确认 |
-| `quick_slots.go` | 6 秒 slot 配置 |
-| `epoch_transition.go` | epoch 过渡逻辑（shuffle、奖励、惩罚） |
-| `forkchoice.go` | LMD-GHOST fork 选择规则 |
-| `attestation_aggregator.go` | attestation 聚合去重 |
-| `committee_rotation.go` | 验证者委员会动态轮换 |
-| `lethe/` | LETHE 验证者隐私协议 |
-
-### PeerDAS 实现
-
-`pkg/das/` 有 116 个文件（1.3MB），实现了完整的 PeerDAS 框架：
-
-**Custody Group 分配**（`sampling.go`）：根据 node ID 和全局配置计算每个节点负责的 custody group，再由 custody group 映射到具体的列索引。
-
-**Reed-Solomon 纠删码**（`pkg/das/erasure/`）：基于有限域上的 Lagrange 插值实现 Reed-Solomon 编码和解码。给定 N 列原始数据，编码为 2N 列；任取 N 列即可恢复。
-
-**其他模块：**
-
-| 模块 | 功能 |
-|------|------|
-| `blob_streaming.go` | 流式传输 blob 数据 |
-| `custody_proofs.go` | custody 证明生成与验证 |
-| `variable_blobs.go` | 可变大小 blob 支持 |
-| `futures.go` | blob futures（提前预定 blob 空间） |
-
-### ePBS + FOCIL 实现
-
-**ePBS**（`pkg/epbs/`，26 个文件）：
-
-实现了协议内的构建者竞拍系统。核心是 `auction.go` —— 构建者提交出价（Builder Bid），按价值排序，最高出价者获得构建权。提议者从竞拍结果中选择 payload，构建者返回完整的 Payload Envelope。
-
-**FOCIL**（`pkg/focil/`）：
-
-实现了 EIP-7805 的包含列表机制。验证者生成本地包含列表，区块构建时通过合规检查（compliance check）确保满足要求。
-
-### BAL 并行执行
-
-`pkg/bal/` 实现了 EIP-7928 的 Block Access Lists：
-
-1. **BAL 生成**：从交易的 access list 提取读写集
-2. **依赖图构建**：检测交易间的 state 交集，有交集的标记为冲突
-3. **并行调度**：无冲突的交易组分配到不同 goroutine 并行执行
-4. **结果合并**：并行执行后合并 state changes，验证最终状态根
-
-### 后量子密码学
-
-`pkg/crypto/pqc/` 实现了四种后量子签名方案：
-
-| 算法 | 实现文件 | 参数 |
-|------|---------|------|
-| ML-DSA-65 | `mldsa_sign.go` | FIPS 204 |
-| Dilithium3 | `dilithium_sign.go` | N=256, Q=8380417, K=6, L=5 |
-| Falcon512 | `falcon_sign.go` | NTRU 格 |
-| SPHINCS+ | `sphincs_sign.go` | 基于哈希 |
-
-Dilithium-3 的实现包含了完整的格密码运算：
-
-- 多项式环 Z_q\[X\]/(X^N+1) 上的加减乘运算
-- Number Theoretic Transform（NTT）加速多项式乘法
-- Fiat-Shamir with Aborts 签名流程（拒绝采样）
-- 完整的 key generation → sign → verify 流程
-
-还有一个 **Hybrid Signer** 模式：同时生成传统 ECDSA 签名和后量子签名，实现向后兼容的渐进式迁移 —— 这与路线图中的实际迁移策略一致。
-
-### zkVM 框架
-
-`pkg/zkvm/`（41 个文件）实现了一个面向以太坊状态验证的 zkVM 框架。
-
-**RISC-V CPU 模拟器**（`riscv_cpu.go`）：实现了 RV32IM 指令集的完整模拟 —— 32 个通用寄存器、R/I/S/B/U/J 全类型指令解码、M 扩展（乘法/除法）、gas 计量和 witness 收集。
-
-**Poseidon 哈希**（`poseidon.go`）：实现了 ZK-friendly 的 Poseidon 置换，包括 SBox、MDS 矩阵、half-full/partial rounds。
-
-**STF 执行器**：将以太坊状态转换编译为 RISC-V 程序，在 zkVM 中执行并收集 witness。
-
-**证明聚合**（`pkg/proofs/`）：实现了 3-of-5 多方案证明系统，支持 SNARK、STARK、IPA、KZG 四种证明类型的聚合。
-
-### Native Rollups
-
-`pkg/rollup/` 实现了 EIP-8079：
-
-- **EXECUTE 预编译**：L1 合约调用此预编译，在隔离环境中执行 L2 状态转换
-- **Anchor Contract**：L2 在 L1 上的锚定合约，管理状态根提交和跨链消息
-
-### 其他模块
-
-| 包 | 功能 |
-|---|------|
-| `pkg/trie/` | MPT + Binary Merkle Tree (EIP-7864) + SHA-256 证明 |
-| `pkg/verkle/` | Verkle 树，Banderwagon 曲线 Pedersen 承诺 + IPA 证明 |
-| `pkg/txpool/encrypted/` | 加密内存池（commit-reveal + 门限解密） |
-| `pkg/txpool/shared/` | 分片内存池（一致性哈希） |
-| `pkg/ssz/` | SSZ 编码 + merkleization + EIP-7916 ProgressiveList |
-| `pkg/p2p/` | devp2p、Discovery V5、gossip、Portal network、snap sync |
-| `pkg/engine/` | Engine API V3-V7，完整 payload 生命周期 |
-| `pkg/rpc/` | 50+ JSON-RPC 方法，WebSocket 订阅 |
-
-### Devnet 测试
-
-ETH2030 通过 [Kurtosis](https://github.com/ethpandaops/ethereum-package) 进行 devnet 测试，配置了 **31 个特性测试**和 **6 个通用配置**（单客户端、多客户端、压力测试等），集成了 10 个测试工具（assertoor、dora、blobscan、prometheus 等）。
+这种分层不是偶然的 —— 它对应了以太坊协议本身的分层（EL/DL/CL），也是 AI 批量生成代码时自然产生的结构：当你告诉 AI "实现 PeerDAS"，它不需要知道 ePBS 是怎么实现的，只需要知道 blob 的类型定义。**模块间的低耦合，恰好让 AI 可以用 757 个子 agent 并行生成不同的包。**
 
 ---
 
