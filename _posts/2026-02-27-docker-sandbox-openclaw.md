@@ -2,11 +2,11 @@
 title: "Docker Sandbox：用微型 VM 安全运行 AI Agent"
 date: 2026-02-27 10:00:00 +0800
 categories: [AI]
-tags: [docker, coding-agent, security, sandbox]
+tags: [docker, openclaw, coding-agent, security, sandbox]
 mermaid: true
 ---
 
-> Docker 最近推出了 Sandbox 功能，可以用微型 VM 安全地运行 AI agent。本文拆解其技术原理和使用方法。
+> Docker 官方最近发了一篇博客，演示如何用 Docker Sandbox + Docker Model Runner 在本地安全运行 OpenClaw。两条命令启动，不需要 API key，不上云，完全本地私有。本文拆解其中的技术原理和使用方法。
 
 ## 为什么 AI Agent 需要沙箱
 
@@ -18,9 +18,9 @@ Coding agent 的核心能力是**执行代码**——读文件、写文件、跑
 - 修改 `/etc/hosts` 或安装恶意包
 - 访问同一网络内的其他服务
 
-各家 coding agent 都在用不同方式解决这个问题——OS 级沙箱（namespace + seccomp）、权限确认弹窗、配置文件白名单等。
+各家 coding agent 都在用不同方式解决这个问题——Codex 用 OS 级沙箱（Linux namespace + seccomp），Claude Code 用权限确认弹窗，OpenClaw 用 `exec-approvals.json` 配置文件白名单。
 
-Docker 的方案更直接：**不在应用层做限制，直接把整个 agent 扔进一个微型 VM**。
+Docker 的方案更直接：**不在应用层做限制，直接把整个 agent 扔进一个微型 VM**。Docker 官方博客以 OpenClaw 为例，演示了完整的流程。
 
 ## Docker Sandbox 是什么
 
@@ -45,18 +45,29 @@ agent 即使执行 `curl https://evil.com`，请求也会被拦截。
 
 ### 创建和运行
 
-```bash
-# 创建 sandbox（可基于预制镜像）
-docker sandbox create --name my-agent -t some-image:latest shell .
+以 Docker 博客中运行 OpenClaw 的例子：
 
-# 配置网络（只允许访问指定 host）
-docker sandbox network proxy my-agent --allow-host localhost
+```bash
+# 拉取本地模型
+docker model pull ai/gpt-oss:20B-UD-Q4_K_XL
+
+# 创建 sandbox（基于预制的 OpenClaw 镜像）
+docker sandbox create --name openclaw \
+  -t olegselajev241/openclaw-dmr:latest shell .
+
+# 配置网络（只允许访问本机的 Model Runner）
+docker sandbox network proxy openclaw --allow-host localhost
 
 # 进入 sandbox
-docker sandbox run my-agent
+docker sandbox run openclaw
+
+# 在 sandbox 内启动 OpenClaw
+~/start-openclaw.sh
 ```
 
-进入后就是一个完整的 Linux 环境，可以安装任何东西、跑任何程序，但网络被严格控制。
+OpenClaw 跑在隔离的微型 VM 里，模型推理跑在宿主机的 Docker Model Runner 上。零 API 费用，零云依赖。
+
+当然 `docker sandbox create` 不局限于 OpenClaw，任何需要隔离运行的应用都可以用同样的方式。
 
 ### 保存和分享
 
@@ -146,7 +157,7 @@ Sandbox 内的应用把 `baseUrl` 指向 `http://127.0.0.1:54321`，请求就会
 3. 代理自动在请求头中注入 API key
 4. Sandbox 内的应用**永远看不到** API key
 
-这意味着即使应用被提示注入攻击（prompt injection）诱导执行 `echo $ANTHROPIC_API_KEY`，它也拿不到任何东西。Key 只存在于宿主机的代理层。
+这意味着即使 OpenClaw 被 prompt injection 诱导执行 `echo $ANTHROPIC_API_KEY`，它也拿不到任何东西。Key 只存在于宿主机的代理层。
 
 这个设计非常巧妙——把 secret management 下沉到基础设施层，应用层完全不需要关心。
 
@@ -196,7 +207,7 @@ Docker 把这些技术包装成了 `docker sandbox create/run/save` 三个命令
 
 Docker Sandbox 特别适合这些场景：
 
-1. **本地跑 AI agent**——agent 有代码执行能力，需要隔离
+1. **本地跑 AI agent**——OpenClaw、Codex 等 coding agent 有代码执行能力，需要隔离
 2. **测试不可信代码**——第三方库、用户提交的脚本
 3. **可复现开发环境**——保存为镜像，团队共享一致环境
 4. **敏感数据处理**——数据不出本地，网络完全隔离
