@@ -3,6 +3,7 @@ title: "GoDaddy 踩坑实录：一个域名配置搞了两小时"
 date: 2026-02-27 13:00:00 +0800
 categories: [随笔]
 tags: [godaddy, dns, github-pages, 域名]
+published: false
 ---
 
 > 买了个域名，想指向 GitHub Pages。DNS 配置 5 分钟搞定，但 GoDaddy 的各种"贴心"功能让我折腾了两小时。记录一下这次体验，顺便扒一扒 GoDaddy 最近的种种问题。
