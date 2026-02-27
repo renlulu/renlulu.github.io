@@ -1,6 +1,6 @@
 ---
 title: "GoDaddy 踩坑实录：一个域名配置搞了两小时"
-date: 2026-02-27 14:00:00 +0800
+date: 2026-02-27 13:00:00 +0800
 categories: [随笔]
 tags: [godaddy, dns, github-pages, 域名]
 ---
