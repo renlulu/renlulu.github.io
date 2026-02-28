@@ -1,6 +1,6 @@
 ---
 title: "Vitalik 推翻了自己：以太坊 Rollup-Centric 路线图宣告终结"
-date: 2026-02-28 20:00:00 +0800
+date: 2026-02-28 15:00:00 +0800
 categories: [区块链]
 tags: [Ethereum, Vitalik, L1, L2, Scaling, ZK-EVM]
 ---
