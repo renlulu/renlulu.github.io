@@ -26,9 +26,9 @@ tags: [claude-code, codex, gemini, mcp, tools]
 |------|-------|------|------|
 | **CC-Switch** | 21.9k | 一站式配置管理 | 功能最全 |
 | **Antigravity-Manager** | 24.8k | 协议代理 + 账号管理 | Web Session → API |
+| **CRS** | 8.7k | 自建中转服务 | 拼车共享 |
 | **zcf** | 5.5k | 零配置快速启动 | 新手友好 |
 | **CCR** | ~257 | Claude Code Router | 轻量级代理 |
-| **CRS** | - | 自建中转服务 | 拼车共享 |
 
 ---
 
