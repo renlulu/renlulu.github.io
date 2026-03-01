@@ -134,9 +134,53 @@ Claude Code Router，轻量级代理。
 
 ---
 
+## 进阶：自建中转服务 CRS
+
+如果你想和朋友拼车分摊订阅成本，可以考虑自建中转服务。
+
+### CRS (Claude Relay Service)
+
+**GitHub**: https://github.com/Wei-Shaw/claude-relay-service
+
+自建 Claude Code 镜像/中转服务，支持拼车共享。
+
+**核心功能**:
+- 多账户管理 + 自动轮换
+- 给每个用户分配独立 API Key
+- 使用统计和成本分析
+- 支持 Claude Code / Codex / Gemini CLI / Droid CLI
+
+**适合场景**:
+- 三五好友一起分摊 Claude Code Max 订阅
+- 不想让第三方镜像看到对话内容
+- 需要长期稳定访问，不受制于镜像站
+
+**部署要求**:
+- 服务器（轻量云，30-60 元/月）
+- Node.js 18+
+- Redis
+
+**快速安装**:
+```bash
+curl -fsSL https://pincc.ai/manage.sh -o manage.sh && chmod +x manage.sh && ./manage.sh install
+```
+
+**与其他工具的区别**:
+
+| 工具 | 定位 | 部署方式 |
+|------|------|----------|
+| CC-Switch / zcf / CCR | 本地配置管理 | 本地安装 |
+| Antigravity-Manager | 本地代理 + 账号管理 | 本地安装 |
+| CRS | 自建中转服务 | 服务器部署 |
+
+CRS 适合有服务器、想多人共享的用户。
+
+---
+
 ## 链接
 
 - CC-Switch: https://github.com/farion1231/cc-switch
 - Antigravity-Manager: https://github.com/lbjlaq/Antigravity-Manager
 - zcf: https://github.com/UfoMiao/zcf
 - CCR: https://github.com/musistudio/claude-code-router
+- CRS: https://github.com/Wei-Shaw/claude-relay-service
