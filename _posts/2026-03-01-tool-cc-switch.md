@@ -1,11 +1,11 @@
 ---
-title: "【工具】AI Coding 配置管理工具：CC-Switch / Antigravity / zcf / CCR"
+title: "【工具】AI Coding 配置管理工具：CC-Switch / Antigravity / zcf / CCR / CRS"
 date: 2026-02-28 20:00:00 +0800
 categories: [Tools]
 tags: [claude-code, codex, gemini, mcp, tools]
 ---
 
-> Claude Code、Codex、Gemini CLI 火了，配套的配置管理工具也涌现出来。CC-Switch、Antigravity-Manager、zcf、CCR 都解决类似的问题——API 配置管理、多账号切换、中转服务集成。本文介绍这几款工具。
+> Claude Code、Codex、Gemini CLI 火了，配套的配置管理工具也涌现出来。CC-Switch、Antigravity-Manager、zcf、CCR、CRS 都解决类似的问题——API 配置管理、多账号切换、中转服务集成。本文介绍这几款工具。
 
 ## 为什么需要这些工具？
 
@@ -28,6 +28,7 @@ tags: [claude-code, codex, gemini, mcp, tools]
 | **Antigravity-Manager** | 24.8k | 协议代理 + 账号管理 | Web Session → API |
 | **zcf** | 5.5k | 零配置快速启动 | 新手友好 |
 | **CCR** | ~257 | Claude Code Router | 轻量级代理 |
+| **CRS** | - | 自建中转服务 | 拼车共享 |
 
 ---
 
@@ -110,35 +111,7 @@ Claude Code Router，轻量级代理。
 
 ---
 
-## 功能对比
-
-| 功能 | CC-Switch | Antigravity | zcf | CCR |
-|------|-----------|-------------|-----|-----|
-| Provider 管理 | ✅ | ✅ | ✅ | ✅ |
-| MCP 管理 | ✅ | ❓ | ❓ | ❌ |
-| Skills 管理 | ✅ | ❓ | ✅ | ❌ |
-| Prompts 管理 | ✅ | ❓ | ✅ | ❌ |
-| 协议代理 | ❌ | ✅ | ✅ | ✅ |
-| 零配置安装 | ❌ | ❌ | ✅ | ❌ |
-| CLI 版本 | ✅ | ❓ | ✅ | ✅ |
-| 图形界面 | ✅ | ✅ | ❌ | ❌ |
-
----
-
-## 选择建议
-
-- **最全面的配置管理** → CC-Switch
-- **协议代理 + 多账号** → Antigravity-Manager
-- **新手快速上手** → zcf
-- **简单路由** → CCR
-
----
-
-## 进阶：自建中转服务 CRS
-
-如果你想和朋友拼车分摊订阅成本，可以考虑自建中转服务。
-
-### CRS (Claude Relay Service)
+## CRS
 
 **GitHub**: https://github.com/Wei-Shaw/claude-relay-service
 
@@ -150,30 +123,41 @@ Claude Code Router，轻量级代理。
 - 使用统计和成本分析
 - 支持 Claude Code / Codex / Gemini CLI / Droid CLI
 
-**适合场景**:
-- 三五好友一起分摊 Claude Code Max 订阅
-- 不想让第三方镜像看到对话内容
-- 需要长期稳定访问，不受制于镜像站
-
-**部署要求**:
-- 服务器（轻量云，30-60 元/月）
-- Node.js 18+
-- Redis
-
-**快速安装**:
+**安装**:
 ```bash
 curl -fsSL https://pincc.ai/manage.sh -o manage.sh && chmod +x manage.sh && ./manage.sh install
 ```
 
-**与其他工具的区别**:
+**特点**: 需要自己搭建服务器，适合多人共享分摊成本。
 
-| 工具 | 定位 | 部署方式 |
-|------|------|----------|
-| CC-Switch / zcf / CCR | 本地配置管理 | 本地安装 |
-| Antigravity-Manager | 本地代理 + 账号管理 | 本地安装 |
-| CRS | 自建中转服务 | 服务器部署 |
+**适合**: 想和朋友拼车分摊订阅的用户。
 
-CRS 适合有服务器、想多人共享的用户。
+---
+
+## 功能对比
+
+| 功能 | CC-Switch | Antigravity | zcf | CCR | CRS |
+|------|-----------|-------------|-----|-----|-----|
+| Provider 管理 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| MCP 管理 | ✅ | ❓ | ❓ | ❌ | ❌ |
+| Skills 管理 | ✅ | ❓ | ✅ | ❌ | ❌ |
+| Prompts 管理 | ✅ | ❓ | ✅ | ❌ | ❌ |
+| 协议代理 | ❌ | ✅ | ✅ | ✅ | ✅ |
+| 零配置安装 | ❌ | ❌ | ✅ | ❌ | ❌ |
+| CLI 版本 | ✅ | ❓ | ✅ | ✅ | ❌ |
+| 图形界面 | ✅ | ✅ | ❌ | ❌ | ✅ |
+| 多人共享 | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 自建服务 | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+---
+
+## 选择建议
+
+- **最全面的配置管理** → CC-Switch
+- **协议代理 + 多账号** → Antigravity-Manager
+- **新手快速上手** → zcf
+- **简单路由** → CCR
+- **多人拼车共享** → CRS
 
 ---
 
