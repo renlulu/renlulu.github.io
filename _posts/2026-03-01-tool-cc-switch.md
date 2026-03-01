@@ -1,6 +1,6 @@
 ---
 title: "【工具】CC-Switch：Claude Code / Codex / Gemini 一站式管理"
-date: 2026-03-01 17:00:00 +0800
+date: 2026-02-28 20:00:00 +0800
 categories: [Tools]
 tags: [claude-code, codex, gemini, mcp, tools]
 ---
@@ -91,7 +91,3 @@ CLI 版本还支持 WebDAV 同步。
 - GitHub: https://github.com/farion1231/cc-switch
 - CLI 版本: https://github.com/SaladDay/cc-switch-cli
 - Releases: https://github.com/farion1231/cc-switch/releases
-
----
-
-*持续收集好用工具中，见 [GOOD-TOOLS.md](/GOOD-TOOLS.md)。*
