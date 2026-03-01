@@ -1,93 +1,142 @@
 ---
-title: "【工具】CC-Switch：Claude Code / Codex / Gemini 一站式管理"
+title: "【工具】AI Coding 配置管理工具：CC-Switch / Antigravity / zcf / CCR"
 date: 2026-02-28 20:00:00 +0800
 categories: [Tools]
 tags: [claude-code, codex, gemini, mcp, tools]
 ---
 
-> 一个跨平台桌面应用，统一管理 Claude Code、Codex、Gemini CLI 的 Provider、MCP、Skills 和 Prompts。21.9k stars，解决的是"配置管理"的真实痛点。
+> Claude Code、Codex、Gemini CLI 火了，配套的配置管理工具也涌现出来。CC-Switch、Antigravity-Manager、zcf、CCR 都解决类似的问题——API 配置管理、多账号切换、中转服务集成。本文介绍这几款工具。
 
-## 解决什么问题？
+## 为什么需要这些工具？
 
-如果你同时使用 Claude Code、Codex、Gemini CLI，会遇到这些问题：
+如果你使用 Claude Code、Codex、Gemini CLI，会遇到这些问题：
 
 1. **Provider 切换麻烦** — 官方 API、中转服务、自定义 endpoint，要手动改配置文件
-2. **MCP Server 分散** — 三个应用各自有配置格式，不统一
-3. **Skills 发现困难** — 不知道有哪些可用，手动安装麻烦
-4. **Prompts 管理** — 不同场景需要不同提示词，切换不方便
+2. **多账号管理** — 不同账号、不同额度
+3. **成本控制** — 官方贵，中转便宜
+4. **配置分散** — 每个工具都有自己的配置文件
 
-CC-Switch 把这些全部统一管理。
+这些工具就是为了解决这些问题。
 
-## 核心功能
+---
 
-| 功能 | 说明 |
-|------|------|
-| **Provider 管理** | 一键切换 API 配置，支持官方 + 多个中转服务 |
-| **MCP Server 管理** | 统一管理三个应用的 MCP，支持 stdio/http/sse |
-| **Skills 管理** | 从 GitHub 仓库自动扫描、一键安装/卸载 |
-| **Prompts 管理** | 系统提示词预设，Markdown 编辑器 |
-| **配置同步** | 导入/导出、自动备份、WebDAV 同步（CLI 版） |
+## 工具对比
 
-## 安装
+| 工具 | Stars | 定位 | 特点 |
+|------|-------|------|------|
+| **CC-Switch** | 21.9k | 一站式配置管理 | 功能最全 |
+| **Antigravity-Manager** | 24.8k | 协议代理 + 账号管理 | Web Session → API |
+| **zcf** | 5.5k | 零配置快速启动 | 新手友好 |
+| **CCR** | ~257 | Claude Code Router | 轻量级代理 |
 
-**macOS (Homebrew):**
+---
 
+## CC-Switch
+
+**GitHub**: https://github.com/farion1231/cc-switch
+
+All-in-One assistant tool for Claude Code, Codex & Gemini CLI。
+
+**核心功能**:
+- Provider 管理（一键切换 API 配置）
+- MCP Server 统一管理
+- Skills 管理（从 GitHub 自动扫描安装）
+- Prompts 管理（系统提示词预设）
+- 配置导入/导出/备份
+
+**安装 (macOS)**:
 ```bash
 brew tap farion1231/ccswitch
 brew install --cask cc-switch
 ```
 
-**Linux:**
+**特点**: 功能最全面，有 GUI 和 CLI 两个版本。
 
+---
+
+## Antigravity-Manager
+
+**GitHub**: https://github.com/lbjlaq/Antigravity-Manager
+
+专业级 AI 账号管理与协议代理系统。
+
+**核心功能**:
+- 多账号管理
+- 协议转换（Web Session → API）
+- 智能请求调度
+- 负载均衡
+
+**特点**: 将 Google/Anthropic 的 Web Session 转为标准 API，支持多账号负载均衡。
+
+**适合**: 需要高性能 API 中转的用户。
+
+---
+
+## zcf
+
+**GitHub**: https://github.com/UfoMiao/zcf
+
+Zero-Config Code Flow，零配置快速启动。
+
+**安装**:
 ```bash
-# Debian/Ubuntu
-sudo dpkg -i CC-Switch-v3.11.1-Linux.deb
-
-# AppImage
-chmod +x CC-Switch-v3.11.1-Linux.AppImage
-./CC-Switch-v3.11.1-Linux.AppImage
+npx zcf i  # 全自动安装
 ```
 
-**Windows:**
+**核心功能**:
+- 一键安装配置
+- workflows 自动生成
+- API/CCR 快速接入
+- MCP 自动配置
 
-下载 MSI 安装包或 Portable 版本。
+**特点**: 强调"零配置"，新手友好。
 
-## 架构设计
+---
 
-```
-CC-Switch (SSOT)
-~/.cc-switch/cc-switch.db
-        ↓ 写入
-┌─────────────────────────────────┐
-│ Claude: ~/.claude/settings.json │
-│         ~/.claude.json (MCP)    │
-│ Codex:  ~/.codex/auth.json      │
-│         ~/.codex/config.toml    │
-│ Gemini: ~/.gemini/.env          │
-│         ~/.gemini/settings.json │
-└─────────────────────────────────┘
-```
+## CCR
 
-所有配置存储在 SQLite 数据库（SSOT），切换时自动同步到各应用的配置文件。
+**GitHub**: https://github.com/musistudio/claude-code-router
 
-## CLI 版本
+Claude Code Router，轻量级代理。
 
-如果你更喜欢终端：
+**核心功能**:
+- 多 provider 路由
+- API 代理
+- 请求转发
 
-```bash
-# 快速安装
-curl -fsSL https://github.com/SaladDay/cc-switch-cli/releases/latest/download/install.sh | bash
+**特点**: 专注于路由功能，轻量级。
 
-# 使用
-cc-switch provider list
-cc-switch provider switch <id>
-cc-switch mcp sync
-```
+**适合**: 只需要简单代理的开发者。
 
-CLI 版本还支持 WebDAV 同步。
+---
+
+## 功能对比
+
+| 功能 | CC-Switch | Antigravity | zcf | CCR |
+|------|-----------|-------------|-----|-----|
+| Provider 管理 | ✅ | ✅ | ✅ | ✅ |
+| MCP 管理 | ✅ | ❓ | ❓ | ❌ |
+| Skills 管理 | ✅ | ❓ | ✅ | ❌ |
+| Prompts 管理 | ✅ | ❓ | ✅ | ❌ |
+| 协议代理 | ❌ | ✅ | ✅ | ✅ |
+| 零配置安装 | ❌ | ❌ | ✅ | ❌ |
+| CLI 版本 | ✅ | ❓ | ✅ | ✅ |
+| 图形界面 | ✅ | ✅ | ❌ | ❌ |
+
+---
+
+## 选择建议
+
+- **最全面的配置管理** → CC-Switch
+- **协议代理 + 多账号** → Antigravity-Manager
+- **新手快速上手** → zcf
+- **简单路由** → CCR
+
+---
 
 ## 链接
 
-- GitHub: https://github.com/farion1231/cc-switch
-- CLI 版本: https://github.com/SaladDay/cc-switch-cli
-- Releases: https://github.com/farion1231/cc-switch/releases
+- CC-Switch: https://github.com/farion1231/cc-switch
+- Antigravity-Manager: https://github.com/lbjlaq/Antigravity-Manager
+- zcf: https://github.com/UfoMiao/zcf
+- CCR: https://github.com/musistudio/claude-code-router
