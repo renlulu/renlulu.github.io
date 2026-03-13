@@ -1,124 +1,246 @@
 ---
-title: 给远程 OpenClaw Gateway 打洞：SSH 隧道 + Chrome Extension 实战
+title: "SSH 隧道打洞原理：怎样穿透内网连上远程服务"
 date: 2026-03-13
-categories: [DevOps]
-tags: [openclaw, ssh-tunnel, gcp, chrome-extension]
+categories: [Networking]
+tags: [ssh-tunnel, port-forwarding, networking, gcp]
 ---
 
-## 背景
+## 什么是"打洞"
 
-我在 GCP Compute Engine 上跑了一个 OpenClaw agent，想在本地通过 Chrome Extension 控制它的浏览器工具。问题是：
+你在云上有一台 VM，上面跑着一个服务（比如 WebSocket server），监听在 8080 端口。你想从本地笔记本连上去。
 
-- VM **没有外部 IP**（只有内网 IP）
-- Gateway 监听在 `0.0.0.0:8080`（`--bind lan`）
-- `openclaw node run` 连外部 IP 时要求 `wss://`（TLS），直接连会报安全错误
-- VM 使用 GCP OS Login，不能用普通 SSH 密钥直连
+听起来很简单？但现实是：
 
-目标：让本地的 `openclaw node run` 能连上远程 Gateway，从而让 Chrome Extension 工作。
+- VM **没有公网 IP**，只有 VPC 内网地址（比如 `10.128.0.42`）
+- 你的笔记本在家里的 NAT 后面，也没有公网 IP
+- 两台机器在不同的私有网络里，互相看不见
 
-## 方案概览
+这就是典型的"内网穿透"问题。所谓"打洞"，就是在两个互不可达的网络之间建立一条通道。
+
+## 网络基础：为什么连不上
+
+理解打洞之前，先搞清楚为什么连不上。
+
+### IP 地址与可达性
+
+互联网的基本规则：**你只能主动连接一个你能路由到的 IP 地址**。
 
 ```
-本地 Chrome Extension
-        ↕
-本地 openclaw node host (127.0.0.1:18789)
-        ↕  ← 这一段需要打洞
-远程 VM Gateway (内网:8080)
+你的笔记本 (192.168.1.100)
+    → 家用路由器 NAT (公网 IP: 203.0.113.5)
+        → 互联网
+            → GCP VPC 路由器
+                → VM (10.128.0.42)  ← 这个地址不在公网路由表里
 ```
 
-最终方案：**给 VM 加外部 IP + 环境变量绕过 TLS 检查**。中间踩了不少坑，记录一下。
+`10.128.0.42` 是 RFC 1918 私有地址，全世界的路由器都不会帮你把包发到这里。你在笔记本上执行 `curl 10.128.0.42:8080`，包出了你的网关就被丢弃了。
 
-## 第一次尝试：SSH 隧道
+### 三种典型场景
 
-### 思路
+| 场景 | 能连吗 | 原因 |
+|------|--------|------|
+| VM 有公网 IP，防火墙开了 8080 | 能 | 直接路由可达 |
+| VM 有公网 IP，防火墙没开 8080 | 不能 | 包到了但被防火墙丢弃 |
+| VM 没有公网 IP | 不能 | 包根本路由不过去 |
 
-通过 `gcloud compute ssh` 的端口转发，把本地 18789 映射到 VM 的 8080：
+第三种场景就是我们要解决的。
+
+## SSH 隧道：借道已有的通道
+
+### 核心思想
+
+虽然你不能直接连 VM 的 8080 端口，但你**能 SSH 到这台 VM**（通过 GCP 的 IAP 隧道或者跳板机）。SSH 连接本身就是一条加密通道。SSH 隧道的思想很简单：
+
+> 既然 SSH 连接已经通了，那就把别的流量也塞进这条 SSH 连接里传过去。
+
+### Local Port Forwarding（本地端口转发）
+
+这是最常用的打洞方式。命令格式：
 
 ```bash
-gcloud compute ssh <vm-name> --zone=us-west1-a -- -NL 18789:localhost:8080
+ssh -L [本地地址:]本地端口:目标地址:目标端口 跳板机
 ```
 
-然后本地连 loopback：
+具体例子：
 
 ```bash
-openclaw node run --host 127.0.0.1 --port 18789
+ssh -NL 18789:localhost:8080 user@jump-host
 ```
 
-### 踩坑
+这条命令做了什么：
 
-1. **`-L 8080:127.0.0.1:8080` 连不上**：Gateway 用 `--bind lan` 启动，虽然实际绑在 `0.0.0.0`，但第一次隧道目标写了 `127.0.0.1` 没通。改成 `-L 18789:localhost:8080` 后解决。
+```
+你的笔记本                          远程 VM
+┌─────────────────┐                ┌─────────────────┐
+│                 │                │                 │
+│  应用程序        │                │  服务 (8080)     │
+│    ↓ 连接       │                │    ↑             │
+│  localhost:18789 │    SSH 隧道    │  localhost:8080  │
+│    ↓            │ ══════════════ │    ↑             │
+│  SSH 客户端 ─────┼───加密通道────→┼── SSH 服务端      │
+│                 │                │                 │
+└─────────────────┘                └─────────────────┘
+```
 
-2. **本地端口被占**：之前挂起的 SSH session（Ctrl+Z）占了端口，新隧道绑不上。需要先 kill 掉旧进程。
+分解一下数据流：
 
-3. **device signature invalid**：隧道通了，但 `openclaw node run` 报 device signature 校验失败。清理了两端的 `~/.openclaw/devices/` 和 `~/.openclaw/identity/` 目录都没用。怀疑是 SSH 隧道对 WebSocket 握手有影响。
+1. 你的应用连接 `localhost:18789`
+2. SSH 客户端在本地监听 18789，收到连接后把数据**加密**，通过已建立的 SSH 连接发送到远端
+3. 远端的 SSH 服务端收到数据后**解密**，然后以自己的身份连接 `localhost:8080`
+4. 远端服务的响应原路返回
 
-## 最终方案：外部 IP + Insecure 模式
+关键点：**第 3 步的 `localhost` 是相对于远端 VM 说的**，不是你的本机。这是很多人搞混的地方。
 
-### 1. 给 VM 加外部 IP
+### `-N` 和 `-L` 参数详解
 
 ```bash
-gcloud compute instances add-access-config <vm-name> \
+ssh -N -L 18789:localhost:8080 user@host
+```
+
+- **`-N`**：不执行远程命令，只做端口转发。没有这个参数你会同时打开一个远程 shell
+- **`-L`**：Local forwarding。格式是 `本地端口:远端目标:远端端口`
+- **`localhost`**：这里指的是远端机器的 loopback 地址，不是你本机的
+
+还有一个常见写法：
+
+```bash
+ssh -L 18789:0.0.0.0:8080 user@host
+```
+
+区别在于隧道的远端目标地址。如果远端服务绑定在 `0.0.0.0`（所有接口），用 `localhost` 和 `0.0.0.0` 都能连上。但如果服务只绑定在某个特定接口（比如 `eth0` 的 IP），你就需要指定那个 IP。
+
+### Remote Port Forwarding（远程端口转发）
+
+方向反过来：让远端机器的某个端口转发到你本地的某个端口。
+
+```bash
+ssh -R 9090:localhost:3000 user@remote-host
+```
+
+这会让远端机器的 9090 端口转发到你本机的 3000。适用于你想把本地开发服务暴露给远端的场景。
+
+### Dynamic Forwarding（SOCKS 代理）
+
+```bash
+ssh -D 1080 user@remote-host
+```
+
+这会在本地 1080 端口起一个 SOCKS5 代理，所有通过这个代理的流量都会从远端机器出去。相当于把远端机器当作一个出口节点。适用于你需要以远端机器的网络身份访问多个服务的场景。
+
+### 三种转发方式对比
+
+| 方式 | 命令 | 数据方向 | 典型场景 |
+|------|------|----------|----------|
+| Local `-L` | `ssh -L 本地:远端目标:远端端口` | 本地 → 远端 | 访问远端内网服务 |
+| Remote `-R` | `ssh -R 远端:本地目标:本地端口` | 远端 → 本地 | 暴露本地服务给远端 |
+| Dynamic `-D` | `ssh -D 本地端口` | 本地 → 远端（动态） | SOCKS 代理，访问多个远端服务 |
+
+## GCP 场景：没有公网 IP 怎么 SSH
+
+等一下——前面说 VM 没有公网 IP，那 SSH 本身怎么连上去？
+
+GCP 提供了 **IAP (Identity-Aware Proxy) TCP Forwarding**。当你执行：
+
+```bash
+gcloud compute ssh my-vm --zone=us-west1-a
+```
+
+实际发生的事情：
+
+```
+你的笔记本
+    → gcloud CLI
+        → IAP TCP 隧道 (走 HTTPS 到 Google 前端)
+            → GCP 内部网络
+                → VM 的 22 端口
+```
+
+IAP 隧道走的是 Google 的基础设施，不需要 VM 有公网 IP。它本质上是 Google 帮你做了一层"打洞"。
+
+所以完整的 SSH 隧道命令是：
+
+```bash
+gcloud compute ssh my-vm --zone=us-west1-a -- -NL 18789:localhost:8080
+```
+
+`--` 后面的参数会原样传给底层的 `ssh` 命令。数据流变成了：
+
+```
+应用 → localhost:18789 → SSH 客户端 → IAP 隧道 → GCP 内网 → VM SSH → localhost:8080 → 服务
+```
+
+三层嵌套：应用数据被 SSH 加密，SSH 流量又被 IAP 的 HTTPS 加密。
+
+## SSH 隧道的局限
+
+SSH 隧道简单好用，但不是万能的。实际使用中会遇到几类问题：
+
+### 1. 连接稳定性
+
+SSH 隧道本质上是一个长连接的 TCP 会话。网络波动、笔记本休眠、WiFi 切换都会导致隧道断开。虽然可以用 `autossh` 自动重连，但终究是个 workaround。
+
+### 2. 应用层兼容性
+
+有些应用协议对底层传输有假设。比如某些 WebSocket 实现会校验连接的来源 IP 或者做设备签名验证。通过 SSH 隧道连接时，远端服务看到的来源是 `127.0.0.1`（因为是 SSH 服务端在本地发起的连接），这可能跟客户端直连时的行为不一致，导致握手失败。
+
+### 3. 端口冲突
+
+本地端口是独占的。如果之前有个 SSH 隧道进程没退干净（比如 `Ctrl+Z` 挂起了而不是 `Ctrl+C` 终止），新的隧道绑不上同一个端口：
+
+```
+bind [127.0.0.1]:18789: Address already in use
+```
+
+排查方法：
+
+```bash
+lsof -i :18789        # 找到占用端口的进程
+kill <pid>             # 杀掉
+```
+
+### 4. 性能开销
+
+每一个字节都要走 SSH 的加密/解密流程。对于高吞吐的场景（比如传大文件、视频流），SSH 隧道的开销不可忽略。
+
+## 其他打洞方案
+
+SSH 隧道是最轻量的方案，但不是唯一的。根据场景不同，还有这些选择：
+
+### 给 VM 加公网 IP
+
+最直接。GCP 里一条命令：
+
+```bash
+gcloud compute instances add-access-config my-vm \
   --zone=us-west1-a \
   --access-config-name="external-nat"
 ```
 
-确认防火墙规则已经开放了 `tcp:8080`（target tag 匹配 VM 的网络标签）。
+加完之后配好防火墙规则就能直连。优点是没有隧道中间层，延迟低、稳定。缺点是暴露了一个公网入口，需要额外的安全措施（防火墙规则、认证、TLS）。
 
-### 2. 配置 Gateway Auth Token
+### 反向代理
 
-在 OpenClaw 的配置文件中加入 token 认证：
+在已有公网入口的服务器上做反向代理，把特定路径或子域名转发到内网 VM：
 
-```json
-{
-  "gateway": {
-    "auth": {
-      "mode": "token",
-      "token": "<your-gateway-token>"
-    },
-    "controlUi": {
-      "dangerouslyDisableDeviceAuth": true
-    }
-  }
-}
+```
+用户 → nginx/caddy (公网) → 内网 VM:8080
 ```
 
-如果用 entrypoint.sh 自动生成配置，确保 `OPENCLAW_GATEWAY_TOKEN` 环境变量被写入 auth 配置。
+优点是可以复用已有的 TLS 证书和域名，支持多个后端。缺点是多了一跳，而且反向代理需要能路由到 VM（也就是说代理服务器要和 VM 在同一个 VPC，或者通过 VPN 互通）。
 
-### 3. 启动 Node Host
+### WireGuard / Tailscale
 
-直连外部 IP，用环境变量绕过 TLS 和 token 认证：
+组建一个虚拟的二层网络，让所有节点互相可达。适合长期的、多机器的内网互通需求。但对于"临时连一个端口"这种需求来说，配置成本偏高。
 
-```bash
-OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1 \
-OPENCLAW_GATEWAY_TOKEN=<your-gateway-token> \
-openclaw node run --host <vm-external-ip> --port 8080
-```
+### 方案选择
 
-关键环境变量：
-- `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1`：允许 `ws://` 明文连接（默认只允许 `wss://`）
-- `OPENCLAW_GATEWAY_TOKEN`：Gateway 的认证 token
+| 方案 | 适合场景 | 配置成本 | 稳定性 |
+|------|----------|----------|--------|
+| SSH 隧道 | 临时调试、开发测试 | 低 | 中 |
+| 公网 IP + 防火墙 | 需要直连、低延迟 | 低 | 高 |
+| 反向代理 | 已有公网入口、多后端 | 中 | 高 |
+| WireGuard/Tailscale | 长期多机互通 | 高 | 高 |
 
-### 4. 安装 Chrome Extension
+## 总结
 
-```bash
-openclaw browser extension install
-```
-
-然后在 `chrome://extensions` 开启开发者模式，点 **Load unpacked** 加载输出的目录。
-
-## 踩坑总结
-
-| 问题 | 原因 | 解决 |
-|------|------|------|
-| `ECONNREFUSED 127.0.0.1:8080` | SSH 隧道没绑上本地端口（旧 session 占用） | kill 旧进程，换端口 |
-| `SECURITY ERROR: Cannot connect over plaintext ws://` | openclaw 默认要求 wss:// | `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1` |
-| `gateway token missing` | Gateway 配了 token auth 但客户端没带 | `OPENCLAW_GATEWAY_TOKEN=<token>` |
-| `device signature invalid` | SSH 隧道下 WebSocket 握手异常 | 改用外部 IP 直连 |
-| `--token` 参数不存在 | `openclaw node run` 不支持 `--token` flag | 用环境变量 `OPENCLAW_GATEWAY_TOKEN` |
-| `Permission denied (publickey)` | VM 用 OS Login，不能普通 ssh 直连 | 必须用 `gcloud compute ssh` |
-
-## 安全提示
-
-- `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1` 会让连接走明文，只在可信网络使用
-- 生产环境应该用 TLS（Caddy 反向代理 / 子域名 + 通配符证书）
-- Gateway token 不要硬编码在脚本里，建议用环境变量或 dotenv 管理
+"打洞"的本质就是在两个不可达的网络之间找到或创造一条可达的路径。SSH 隧道之所以好用，是因为 SSH 几乎是所有 Linux 机器的标配——只要你能 SSH 上去，就能打洞。理解了 `-L`、`-R`、`-D` 三种转发模式的数据流方向，遇到内网穿透的需求就不会慌了。
