@@ -345,6 +345,41 @@ Claude Code 的哲学是"开箱即用"——权限审批、子代理、MCP 集�
 
 两种都是有效的选择，取决于你是要一个**平台**还是要一个**产品**。
 
+### 架构对比图
+
+下面这个图更直观地展示了 Pi 和其他主流 Agent 框架的架构差异：
+
+```
+                Pi (Platform)                    Claude Code (Product)              OpenClaw (Pi-based)
+        ┌──────────────────────┐           ┌──────────────────────┐         ┌──────────────────────┐
+        │   Your Application   │           │    Claude Desktop    │         │   46 Channel Plugins │
+        ├──────────────────────┤           ├──────────────────────┤         ├──────────────────────┤
+        │  Custom Extensions   │           │   Built-in Features  │         │   Gateway Router     │
+        │  • Tools             │           │   • Plan Mode        │         │   • Auth Failover    │
+        │  • Commands          │           │   • Permissions      │         │   • Session Groups   │
+        │  • UI Widgets        │           │   • MCP Support      │         ├──────────────────────┤
+        ├──────────────────────┤           │   • Sub-agents       │         │ Pi Extension System  │
+        │   Pi Agent Core ←───────────────────────────────────────────────→ │ (Shared with Pi)     │
+        │   • Agent Loop       │           ├──────────────────────┤         ├──────────────────────┤
+        │   • Steering Queue   │           │    Agent Runtime     │         │ Pi Agent Core        │
+        │   • Tool Execution   │           │    (Built-in)        │         │ (Shared with Pi)     │
+        ├──────────────────────┤           ├──────────────────────┤         ├──────────────────────┤
+        │   Pi AI Layer ←─────────────────────────────────────────────────→ │ Pi AI Layer          │
+        │   • 22+ Providers    │           │   Anthropic API      │         │ (Shared with Pi)     │
+        │   • EventStream      │           │   (Single Provider)  │         │ + Profile Rotation   │
+        │   • Context Transform│           └──────────────────────┘         └──────────────────────┘
+        └──────────────────────┘
+              ↑                                      ↑                                ↑
+              │                                      │                                │
+        可替换每一层                           一体化设计                      复用 Pi 底层
+        极致灵活性                             开箱即用                        快速构建新产品
+```
+
+这个对比清晰地展示了三种不同的架构选择：
+- **Pi**：分层架构，每层可独立替换，适合作为平台
+- **Claude Code**：一体化设计，功能内置，适合作为产品
+- **OpenClaw**：基于 Pi 构建，复用底层能力，快速实现新产品
+
 ## 构建 Agent 的关键启示
 
 从 Pi 的架构中可以提炼出几个通用的设计原则：
