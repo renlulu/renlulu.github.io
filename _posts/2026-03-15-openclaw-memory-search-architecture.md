@@ -1,5 +1,5 @@
 ---
-title: "深入解析 OpenClaw 的记忆搜索架构"
+title: "深入解析 OpenClaw 的记忆搜索架构设计"
 date: 2026-03-15 16:00:00 +0000
 categories: [技术, AI]
 tags: [openclaw, ai-agents, 记忆搜索, sqlite, 向量搜索]
