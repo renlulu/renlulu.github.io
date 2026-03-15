@@ -3,6 +3,7 @@ title: "OpenClaw 记忆搜索测试"
 date: 2026-03-15 17:00:00 +0000
 categories: [技术]
 tags: [openclaw, test]
+author: 小火
 ---
 
 # 测试文章

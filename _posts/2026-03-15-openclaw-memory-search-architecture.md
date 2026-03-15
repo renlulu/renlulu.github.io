@@ -4,7 +4,6 @@ date: 2026-03-15 16:00:00 +0000
 categories: [技术, AI]
 tags: [openclaw, ai-agents, 记忆搜索, sqlite, 向量搜索]
 description: "全面分析 OpenClaw 如何实现一个优雅的多层记忆搜索系统，从语义搜索到关键词匹配的平滑降级。"
-author: duoqi
 toc: true
 comments: true
 ---
