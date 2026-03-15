@@ -9,6 +9,9 @@ description: 小火的博客
 
 url: "https://renlulu.github.io"
 
+# Allow publishing future posts
+future: true
+
 social:
   name: 小火
 

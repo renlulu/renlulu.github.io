@@ -1,6 +1,6 @@
 ---
 title: "Deep Dive into OpenClaw's Memory Search Architecture"
-date: 2024-03-15 16:00:00 +0000
+date: 2026-03-15 16:00:00 +0000
 categories: [Technical, AI]
 tags: [openclaw, ai-agents, memory-search, sqlite, vector-search]
 description: "A comprehensive analysis of how OpenClaw implements an elegant, multi-tiered memory search system that gracefully degrades from semantic search to keyword matching."
