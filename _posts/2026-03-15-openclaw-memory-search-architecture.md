@@ -126,7 +126,7 @@ CREATE VIRTUAL TABLE chunks_vec USING vec0(
 ```typescript
 // 根据配置确定搜索模式
 if (!this.provider) {
-    // 模式1：纯 FTS（无嵌入提供者）
+    // 模式1：纯 FTS（无 embedding provider）
     return this.searchFTSOnly(query);
 } else if (!this.fts.available) {
     // 模式2：纯向量（FTS 不可用）
@@ -243,9 +243,9 @@ this.watcher.on('change', () => {
 
 ## 搜索层：混合检索
 
-### 模式 1：纯 FTS（无嵌入）
+### 模式 1：纯 FTS（无 embedding）
 
-当没有配置嵌入提供者时，系统回退到智能关键词搜索：
+当没有配置 embedding provider 时，系统回退到智能关键词搜索：
 
 ```typescript
 // 从自然语言查询中提取关键词
@@ -268,10 +268,10 @@ const merged = mergeResultSets(resultSets);
 
 ### 模式 2：纯向量（纯语义）
 
-当只有嵌入可用时：
+当只有 embedding 可用时：
 
 ```typescript
-// 获取查询嵌入
+// 获取查询 embedding
 const queryVec = await this.provider.embed(query);
 
 // 使用余弦相似度查找相似块
@@ -280,7 +280,7 @@ const results = await this.searchVector(queryVec, limit);
 
 向量搜索擅长：
 - 语义相似性（"咖啡" ≈ "拿铁" ≈ "浓缩咖啡"）
-- 改述（"我的机器" ≈ "我拥有的电脑"）
+- 语义改写（"我的机器" ≈ "我拥有的电脑"）
 - 跨语言匹配（使用多语言模型）
 
 ### 模式 3：混合搜索（最佳点）
@@ -364,9 +364,9 @@ const decayedScore = score * Math.exp(-λ * ageInDays);
 
 ## 实现细节
 
-### 嵌入提供者
+### Embedding Provider
 
-OpenClaw 支持多个嵌入提供者，具有自动回退：
+OpenClaw 支持多个 embedding provider，具有自动回退：
 
 ```typescript
 // 提供者解析顺序
@@ -379,7 +379,7 @@ OpenClaw 支持多个嵌入提供者，具有自动回退：
 
 ### 性能优化
 
-1. **嵌入缓存**
+1. **Embedding 缓存**
    ```sql
    CREATE TABLE embedding_cache (
        hash TEXT PRIMARY KEY,
@@ -429,7 +429,7 @@ if (sessionType === 'group') {
 ### 索引性能
 - **初始索引**：每 MB Markdown 约 1-2 秒
 - **增量更新**：每个更改文件 <100ms
-- **内存使用**：约为 Markdown 大小的 10-20 倍（含嵌入）
+- **内存使用**：约为 Markdown 大小的 10-20 倍（含 embedding）
 
 ### 搜索性能
 - **纯 FTS**：大多数查询 <10ms
