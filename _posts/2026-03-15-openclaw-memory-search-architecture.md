@@ -1,231 +1,231 @@
 ---
-title: "Deep Dive into OpenClaw's Memory Search Architecture"
+title: "深入解析 OpenClaw 的记忆搜索架构"
 date: 2026-03-15 16:00:00 +0000
-categories: [Technical, AI]
-tags: [openclaw, ai-agents, memory-search, sqlite, vector-search]
-description: "A comprehensive analysis of how OpenClaw implements an elegant, multi-tiered memory search system that gracefully degrades from semantic search to keyword matching."
+categories: [技术, AI]
+tags: [openclaw, ai-agents, 记忆搜索, sqlite, 向量搜索]
+description: "全面分析 OpenClaw 如何实现一个优雅的多层记忆搜索系统，从语义搜索到关键词匹配的平滑降级。"
 author: duoqi
 toc: true
 comments: true
 ---
 
-# Deep Dive into OpenClaw's Memory Search Architecture
+# 深入解析 OpenClaw 的记忆搜索架构
 
-> A comprehensive analysis of how OpenClaw implements an elegant, multi-tiered memory search system that gracefully degrades from semantic search to keyword matching.
+> 全面分析 OpenClaw 如何实现一个优雅的多层记忆搜索系统，从语义搜索到关键词匹配的平滑降级。
 
-## Table of Contents
+## 目录
 
-1. [Introduction](#introduction)
-2. [Architecture Overview](#architecture-overview)
-3. [The Three-Layer Design](#the-three-layer-design)
-4. [Storage Layer: Markdown as Truth](#storage-layer-markdown-as-truth)
-5. [Index Layer: SQLite as Accelerator](#index-layer-sqlite-as-accelerator)
-6. [Search Layer: Hybrid Retrieval](#search-layer-hybrid-retrieval)
-7. [Graceful Degradation](#graceful-degradation)
-8. [Implementation Details](#implementation-details)
-9. [Performance Optimizations](#performance-optimizations)
-10. [Lessons for AI Agent Design](#lessons-for-ai-agent-design)
+1. [引言](#引言)
+2. [架构概览](#架构概览)
+3. [三层设计](#三层设计)
+4. [存储层：Markdown 作为真相源](#存储层markdown-作为真相源)
+5. [索引层：SQLite 作为加速器](#索引层sqlite-作为加速器)
+6. [搜索层：混合检索](#搜索层混合检索)
+7. [优雅降级](#优雅降级)
+8. [实现细节](#实现细节)
+9. [性能优化](#性能优化)
+10. [对 AI Agent 设计的启示](#对-ai-agent-设计的启示)
 
-## Introduction
+## 引言
 
-When building AI agents that need to remember past interactions and accumulated knowledge, we face a fundamental challenge: how do we balance human readability, search performance, and system complexity? OpenClaw's memory search system offers an elegant solution that has profound implications for AI agent architecture.
+在构建需要记忆过去交互和积累知识的 AI Agent 时，我们面临一个基本挑战：如何平衡人类可读性、搜索性能和系统复杂度？OpenClaw 的记忆搜索系统提供了一个优雅的解决方案，对 AI Agent 架构设计有深远的影响。
 
-Through reverse engineering and source code analysis, I discovered that OpenClaw implements a sophisticated three-tier memory system that seamlessly degrades from semantic vector search to keyword matching, all while keeping Markdown files as the single source of truth.
+通过逆向工程和源代码分析，我发现 OpenClaw 实现了一个精妙的三层记忆系统，能够从语义向量搜索无缝降级到关键词匹配，同时保持 Markdown 文件作为唯一的真相源。
 
-## Architecture Overview
+## 架构概览
 
-OpenClaw's memory search is built on three core principles:
+OpenClaw 的记忆搜索建立在三个核心原则之上：
 
-1. **Human-First Data Format**: All memories are stored as Markdown files that users can directly read and edit
-2. **Progressive Enhancement**: The system works at multiple capability levels, from basic file scanning to advanced semantic search
-3. **Zero Lock-in**: The index is purely for acceleration - delete it anytime and rebuild from source files
+1. **人类优先的数据格式**：所有记忆都存储为用户可以直接读写的 Markdown 文件
+2. **渐进增强**：系统在多个能力级别上工作，从基础文件扫描到高级语义搜索
+3. **零锁定**：索引纯粹用于加速——随时可以删除并从源文件重建
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                   User Interface                 │
-│                  (Markdown Files)                │
+│                   用户接口                       │
+│                (Markdown 文件)                   │
 └─────────────────┬───────────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────────┐
-│              SQLite Index Layer                  │
+│              SQLite 索引层                       │
 │  ┌─────────────┐ ┌─────────────┐ ┌───────────┐ │
-│  │   Metadata  │ │  Full-Text  │ │  Vector   │ │
-│  │   (files)   │ │  Search     │ │  Search   │ │
+│  │   元数据     │ │  全文搜索    │ │  向量搜索  │ │
+│  │   (files)   │ │  (FTS5)     │ │  (vec)    │ │
 │  └─────────────┘ └─────────────┘ └───────────┘ │
 └─────────────────┬───────────────────────────────┘
                   │
 ┌─────────────────▼───────────────────────────────┐
-│               Search Runtime                     │
+│               搜索运行时                         │
 │  ┌─────────┐ ┌─────────┐ ┌─────────────────┐  │
-│  │   FTS   │ │ Vector  │ │     Hybrid      │  │
-│  │  Only   │ │  Only   │ │  (FTS+Vector)   │  │
+│  │  纯FTS   │ │ 纯向量   │ │  混合搜索      │  │
+│  │  模式    │ │  模式    │ │ (FTS+向量)    │  │
 │  └─────────┘ └─────────┘ └─────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
 
-## The Three-Layer Design
+## 三层设计
 
-### Layer 1: Markdown Files (Source of Truth)
+### 第一层：Markdown 文件（真相源）
 
-The foundation is beautifully simple:
+基础设计简洁优雅：
 
 ```
 ~/.openclaw/workspace/
-├── MEMORY.md           # Curated long-term memory
+├── MEMORY.md           # 精选的长期记忆
 └── memory/
-    ├── 2024-01-15.md   # Daily journal entries
+    ├── 2024-01-15.md   # 每日日志条目
     ├── 2024-01-16.md
-    └── projects.md     # Topic-specific notes
+    └── projects.md     # 主题特定笔记
 ```
 
-Key design decisions:
-- **MEMORY.md**: Reserved for important, curated memories (only loaded in private sessions)
-- **memory/\*.md**: Daily logs and topic files for running context
-- **Plain text**: No proprietary format, works with any text editor
-- **Git-friendly**: Every change is diffable and trackable
+关键设计决策：
+- **MEMORY.md**：保留重要的、精选的记忆（仅在私人会话中加载）
+- **memory/\*.md**：日常日志和主题文件，用于运行上下文
+- **纯文本**：无专有格式，可用任何文本编辑器
+- **Git 友好**：每个更改都可以 diff 和追踪
 
-### Layer 2: SQLite Index (Performance Accelerator)
+### 第二层：SQLite 索引（性能加速器）
 
-The SQLite database (`~/.openclaw/memory/main.sqlite`) serves as a disposable acceleration layer:
+SQLite 数据库（`~/.openclaw/memory/main.sqlite`）作为一个可丢弃的加速层：
 
 ```sql
--- Core schema (simplified)
+-- 核心架构（简化版）
 CREATE TABLE chunks (
     id TEXT PRIMARY KEY,
-    path TEXT NOT NULL,           -- Source file
-    start_line INTEGER NOT NULL,  -- Location in file
+    path TEXT NOT NULL,           -- 源文件
+    start_line INTEGER NOT NULL,  -- 文件中的位置
     end_line INTEGER NOT NULL,
-    text TEXT NOT NULL,           -- Chunk content
-    embedding TEXT NOT NULL,      -- Vector (JSON array)
+    text TEXT NOT NULL,           -- 块内容
+    embedding TEXT NOT NULL,      -- 向量（JSON 数组）
     updated_at INTEGER NOT NULL
 );
 
--- Full-text search index
+-- 全文搜索索引
 CREATE VIRTUAL TABLE chunks_fts USING fts5(
-    text,                        -- Searchable content
+    text,                        -- 可搜索内容
     id UNINDEXED,
     path UNINDEXED,
-    -- ... other metadata
+    -- ... 其他元数据
 );
 
--- Vector index (when sqlite-vec available)
+-- 向量索引（当 sqlite-vec 可用时）
 CREATE VIRTUAL TABLE chunks_vec USING vec0(
     chunk_id TEXT PRIMARY KEY,
     embedding FLOAT[1536]
 );
 ```
 
-The genius is in what this index **doesn't** do:
-- It never modifies the source Markdown files
-- It can be deleted and rebuilt anytime
-- It's not required for basic functionality
+这个索引的精妙之处在于它**不做**什么：
+- 它从不修改源 Markdown 文件
+- 它可以随时删除并重建
+- 它不是基础功能所必需的
 
-### Layer 3: Search Runtime (Multi-Mode Retrieval)
+### 第三层：搜索运行时（多模式检索）
 
-The search layer adapts to available capabilities:
+搜索层根据可用能力自适应：
 
 ```typescript
-// Determine search mode based on configuration
+// 根据配置确定搜索模式
 if (!this.provider) {
-    // Mode 1: FTS-only (no embedding provider)
+    // 模式1：纯 FTS（无嵌入提供者）
     return this.searchFTSOnly(query);
 } else if (!this.fts.available) {
-    // Mode 2: Vector-only (FTS unavailable)
+    // 模式2：纯向量（FTS 不可用）
     return this.searchVectorOnly(query);
 } else {
-    // Mode 3: Hybrid (both available)
+    // 模式3：混合（两者都可用）
     return this.searchHybrid(query);
 }
 ```
 
-## Storage Layer: Markdown as Truth
+## 存储层：Markdown 作为真相源
 
-### Why Markdown?
+### 为什么选择 Markdown？
 
-The choice of Markdown over JSON, YAML, or a database is deliberate:
+选择 Markdown 而非 JSON、YAML 或数据库是经过深思熟虑的：
 
-1. **Human Editable**: Users can fix AI mistakes, add notes, reorganize content
-2. **AI Native**: LLMs understand Markdown structure without special parsing
-3. **Tool Agnostic**: Works with any text editor, grep, git, etc.
-4. **Self-Documenting**: The format itself suggests how to organize memories
+1. **人类可编辑**：用户可以修正 AI 的错误、添加笔记、重新组织内容
+2. **AI 原生**：LLM 无需特殊解析就能理解 Markdown 结构
+3. **工具无关**：适用于任何文本编辑器、grep、git 等
+4. **自文档化**：格式本身就提示了如何组织记忆
 
-### Memory File Conventions
+### 记忆文件约定
 
 ```markdown
-# MEMORY.md Example
+# MEMORY.md 示例
 
-## About the User
-- Prefers coffee over tea
-- Lives in Beijing
-- Works on AI projects
+## 关于用户
+- 喜欢咖啡胜过茶
+- 居住在北京
+- 从事 AI 项目
 
-## Important Decisions
+## 重要决策
 ### 2024-01-15
-Decided to implement vector search using SQLite instead of a dedicated vector database...
+决定使用 SQLite 实现向量搜索，而不是专用的向量数据库...
 ```
 
-Daily files follow a similar pattern:
+日常文件遵循类似的模式：
 
 ```markdown
 # 2024-01-15
 
-## Morning Discussion
-User asked about implementing memory search. Key points:
-- Need to balance performance and simplicity
-- SQLite seems like a good compromise
-- Should support graceful degradation
+## 早晨讨论
+用户询问了如何实现记忆搜索。要点：
+- 需要平衡性能和简单性
+- SQLite 似乎是个不错的折中方案
+- 应该支持优雅降级
 ```
 
-### The Human in the Loop
+### 人机协作
 
-OpenClaw treats memory curation as a collaborative process:
-- The AI writes initial memories
-- Humans can edit, reorganize, and correct
-- Changes are picked up automatically by file watchers
-- No "sync conflicts" - the file is always authoritative
+OpenClaw 将记忆管理视为协作过程：
+- AI 写入初始记忆
+- 人类可以编辑、重组和纠正
+- 文件监视器自动捕获更改
+- 没有"同步冲突"——文件始终是权威的
 
-## Index Layer: SQLite as Accelerator
+## 索引层：SQLite 作为加速器
 
-### Chunking Strategy
+### 分块策略
 
-Documents are split into overlapping chunks for optimal retrieval:
+文档被分割成重叠的块以实现最佳检索：
 
 ```typescript
-const DEFAULT_CHUNK_TOKENS = 400;    // ~100-200 words
-const DEFAULT_CHUNK_OVERLAP = 80;    // ~20% overlap
+const DEFAULT_CHUNK_TOKENS = 400;    // ~100-200 个词
+const DEFAULT_CHUNK_OVERLAP = 80;    // ~20% 重叠
 ```
 
-This ensures:
-- Chunks are large enough to maintain context
-- Overlap prevents losing information at boundaries
-- Token-based splitting respects sentence boundaries
+这确保了：
+- 块足够大以保持上下文
+- 重叠防止在边界处丢失信息
+- 基于 token 的分割尊重句子边界
 
-### Three Tables, Three Purposes
+### 三个表，三个用途
 
-1. **chunks**: Stores the searchable content
+1. **chunks**：存储可搜索的内容
    ```sql
    INSERT INTO chunks (id, path, start_line, end_line, text, embedding)
    VALUES (?, ?, ?, ?, ?, ?);
    ```
 
-2. **chunks_fts**: Full-text search index
+2. **chunks_fts**：全文搜索索引
    ```sql
    INSERT INTO chunks_fts (text, id, path, ...)
    SELECT text, id, path, ... FROM chunks;
    ```
 
-3. **chunks_vec**: Vector similarity index (optional)
+3. **chunks_vec**：向量相似度索引（可选）
    ```sql
    INSERT INTO chunks_vec (chunk_id, embedding)
    SELECT id, embedding FROM chunks;
    ```
 
-### Index Lifecycle
+### 索引生命周期
 
-The index is automatically maintained:
+索引自动维护：
 
 ```typescript
-// File watcher triggers reindex
+// 文件监视器触发重新索引
 this.watcher = chokidar.watch(['MEMORY.md', 'memory/**/*.md'], {
     persistent: false,
     ignoreInitial: true,
@@ -237,150 +237,150 @@ this.watcher.on('change', () => {
 });
 ```
 
-Key behaviors:
-- Changes are debounced (1.5 seconds default)
-- Sync runs asynchronously to avoid blocking search
-- Failed syncs don't break search (uses stale index)
+关键行为：
+- 更改被去抖动（默认 1.5 秒）
+- 同步异步运行以避免阻塞搜索
+- 失败的同步不会破坏搜索（使用陈旧索引）
 
-## Search Layer: Hybrid Retrieval
+## 搜索层：混合检索
 
-### Mode 1: FTS-Only (No Embeddings)
+### 模式 1：纯 FTS（无嵌入）
 
-When no embedding provider is configured, the system falls back to intelligent keyword search:
+当没有配置嵌入提供者时，系统回退到智能关键词搜索：
 
 ```typescript
-// Extract keywords from natural language query
+// 从自然语言查询中提取关键词
 const keywords = extractKeywords(query);
-// "What did I tell you about coffee?" → ["tell", "coffee"]
+// "我之前告诉过你什么关于咖啡的事？" → ["告诉", "咖啡"]
 
-// Search each keyword independently
+// 独立搜索每个关键词
 const resultSets = await Promise.all(
     keywords.map(term => this.searchKeyword(term))
 );
 
-// Merge and deduplicate results
+// 合并并去重结果
 const merged = mergeResultSets(resultSets);
 ```
 
-The keyword extraction is surprisingly sophisticated:
-- Removes stop words ("the", "a", "what")
-- Preserves important terms
-- Handles multiple languages
+关键词提取相当复杂：
+- 删除停用词（"的"、"一个"、"什么"）
+- 保留重要术语
+- 处理多种语言
 
-### Mode 2: Vector-Only (Pure Semantic)
+### 模式 2：纯向量（纯语义）
 
-When only embeddings are available:
+当只有嵌入可用时：
 
 ```typescript
-// Get query embedding
+// 获取查询嵌入
 const queryVec = await this.provider.embed(query);
 
-// Find similar chunks using cosine similarity
+// 使用余弦相似度查找相似块
 const results = await this.searchVector(queryVec, limit);
 ```
 
-Vector search excels at:
-- Semantic similarity ("coffee" ≈ "latte" ≈ "espresso")
-- Paraphrasing ("my machine" ≈ "the computer I own")
-- Cross-lingual matching (with multilingual models)
+向量搜索擅长：
+- 语义相似性（"咖啡" ≈ "拿铁" ≈ "浓缩咖啡"）
+- 改述（"我的机器" ≈ "我拥有的电脑"）
+- 跨语言匹配（使用多语言模型）
 
-### Mode 3: Hybrid Search (The Sweet Spot)
+### 模式 3：混合搜索（最佳点）
 
-When both FTS and vector search are available, OpenClaw combines their strengths:
+当 FTS 和向量搜索都可用时，OpenClaw 结合了它们的优势：
 
 ```typescript
-// Run both searches in parallel
+// 并行运行两种搜索
 const [vectorResults, keywordResults] = await Promise.all([
     this.searchVector(queryVec, candidateLimit),
     this.searchKeyword(query, candidateLimit)
 ]);
 
-// Weighted combination
+// 加权组合
 const finalScore = 
     vectorWeight * vectorScore + 
     textWeight * textScore;
 ```
 
-Why hybrid search matters:
-- **Vectors** handle concepts and paraphrasing
-- **Keywords** excel at exact matches (IDs, names, code)
-- Together they cover more retrieval scenarios
+为什么混合搜索很重要：
+- **向量**处理概念和改述
+- **关键词**擅长精确匹配（ID、名称、代码）
+- 两者结合覆盖更多检索场景
 
-### Post-Processing Pipeline
+### 后处理管道
 
-After merging results, two optional stages refine the output:
+合并结果后，两个可选阶段优化输出：
 
-#### 1. MMR (Maximum Marginal Relevance)
+#### 1. MMR（最大边际相关性）
 
-Reduces redundancy by balancing relevance with diversity:
+通过平衡相关性和多样性来减少冗余：
 
 ```typescript
-// MMR scoring
+// MMR 评分
 const mmrScore = λ * relevance - (1-λ) * maxSimilarityToSelected;
 ```
 
-This prevents returning five nearly-identical chunks about the same topic.
+这防止返回五个几乎相同的关于同一主题的块。
 
-#### 2. Temporal Decay
+#### 2. 时间衰减
 
-Boosts recent memories over old ones:
+提升最近的记忆而非旧的：
 
 ```typescript
-// Exponential decay based on age
+// 基于年龄的指数衰减
 const decayedScore = score * Math.exp(-λ * ageInDays);
 ```
 
-With default half-life of 30 days:
-- Today: 100% score
-- 1 week: ~84% score  
-- 1 month: 50% score
-- 3 months: 12.5% score
+默认半衰期为 30 天：
+- 今天：100% 分数
+- 1 周：~84% 分数
+- 1 月：50% 分数
+- 3 月：12.5% 分数
 
-## Graceful Degradation
+## 优雅降级
 
-The system's degradation strategy ensures it always returns *something*:
+系统的降级策略确保它总是返回*某些东西*：
 
 ```
 ┌─────────────────┐
-│ Embedding API   │ ──❌──┐
+│  嵌入 API       │ ──❌──┐
 └─────────────────┘       │
                          ▼
 ┌─────────────────┐     ┌─────────────────┐
-│ Vector Search   │ ──▶ │  FTS Fallback   │
+│  向量搜索        │ ──▶ │  FTS 回退       │
 └─────────────────┘     └─────────────────┘
                                 │
-                         ❌ SQLite corrupted
+                         ❌ SQLite 损坏
                                 │
                                 ▼
                          ┌─────────────────┐
-                         │  File Scanning  │
+                         │  文件扫描        │
                          └─────────────────┘
 ```
 
-Each level provides progressively basic but still functional search:
+每个级别提供逐渐基础但仍然功能性的搜索：
 
-1. **Full Hybrid**: Semantic + keyword search
-2. **FTS-Only**: Intelligent keyword extraction and matching
-3. **File Scan**: Linear search through Markdown files (last resort)
+1. **完全混合**：语义 + 关键词搜索
+2. **纯 FTS**：智能关键词提取和匹配
+3. **文件扫描**：线性搜索 Markdown 文件（最后手段）
 
-## Implementation Details
+## 实现细节
 
-### Embedding Providers
+### 嵌入提供者
 
-OpenClaw supports multiple embedding providers with automatic fallback:
+OpenClaw 支持多个嵌入提供者，具有自动回退：
 
 ```typescript
-// Provider resolution order
-1. Local (GGUF model via llama.cpp)
-2. OpenAI (text-embedding-3-small)
-3. Google (gemini-embedding-001)
-4. Voyage (voyage-3)
-5. None (FTS-only mode)
+// 提供者解析顺序
+1. 本地（通过 llama.cpp 的 GGUF 模型）
+2. OpenAI（text-embedding-3-small）
+3. Google（gemini-embedding-001）
+4. Voyage（voyage-3）
+5. 无（纯 FTS 模式）
 ```
 
-### Performance Optimizations
+### 性能优化
 
-1. **Embedding Cache**
+1. **嵌入缓存**
    ```sql
    CREATE TABLE embedding_cache (
        hash TEXT PRIMARY KEY,
@@ -389,111 +389,111 @@ OpenClaw supports multiple embedding providers with automatic fallback:
    );
    ```
 
-2. **Batch Processing**
+2. **批处理**
    ```typescript
-   // OpenAI Batch API for large corpus
+   // 用于大型语料库的 OpenAI 批处理 API
    if (settings.batch.enabled) {
        return this.batchEmbed(chunks);
    }
    ```
 
-3. **SQLite-vec Extension**
+3. **SQLite-vec 扩展**
    ```sql
-   -- Hardware-accelerated vector operations
+   -- 硬件加速的向量操作
    SELECT vec_distance_cosine(embedding, ?) AS distance
    FROM chunks_vec
    ORDER BY distance ASC
    ```
 
-### Memory Scoping
+### 记忆作用域
 
-Different session types have different memory access:
+不同的会话类型有不同的记忆访问权限：
 
 ```typescript
-// Private DM session - full access
+// 私人 DM 会话 - 完全访问
 if (sessionType === 'direct') {
     return ['MEMORY.md', 'memory/**/*.md'];
 }
 
-// Group chat - limited access
+// 群聊 - 有限访问
 if (sessionType === 'group') {
-    return ['memory/**/*.md']; // No MEMORY.md
+    return ['memory/**/*.md']; // 没有 MEMORY.md
 }
 ```
 
-This prevents leaking personal context into public spaces.
+这防止了将个人上下文泄露到公共空间。
 
-## Performance Characteristics
+## 性能特征
 
-Based on the implementation, here's what to expect:
+基于实现，以下是预期性能：
 
-### Indexing Performance
-- **Initial index**: ~1-2 seconds per MB of Markdown
-- **Incremental updates**: <100ms per changed file
-- **Memory usage**: ~10-20x the Markdown size (with embeddings)
+### 索引性能
+- **初始索引**：每 MB Markdown 约 1-2 秒
+- **增量更新**：每个更改文件 <100ms
+- **内存使用**：约为 Markdown 大小的 10-20 倍（含嵌入）
 
-### Search Performance
-- **FTS-only**: <10ms for most queries
-- **Vector search (with sqlite-vec)**: <50ms for 10k chunks
-- **Hybrid search**: <100ms typical
+### 搜索性能
+- **纯 FTS**：大多数查询 <10ms
+- **向量搜索（使用 sqlite-vec）**：10k 块 <50ms
+- **混合搜索**：典型 <100ms
 
-### Scalability Limits
-- **Tested up to**: 100MB of Markdown (~50k chunks)
-- **Practical limit**: 1GB of Markdown (system-dependent)
-- **Beyond that**: Consider dedicated vector database
+### 可扩展性限制
+- **测试达到**：100MB Markdown（约 50k 块）
+- **实际限制**：1GB Markdown（取决于系统）
+- **超过此限制**：考虑专用向量数据库
 
-## Lessons for AI Agent Design
+## 对 AI Agent 设计的启示
 
-OpenClaw's memory system teaches several valuable lessons:
+OpenClaw 的记忆系统教会了我们几个宝贵的经验：
 
-### 1. User Agency Matters
+### 1. 用户自主权很重要
 
-By keeping memories in editable Markdown:
-- Users maintain control over their data
-- Mistakes can be corrected
-- Organization can be customized
-- No vendor lock-in
+通过将记忆保存在可编辑的 Markdown 中：
+- 用户保持对其数据的控制
+- 错误可以被纠正
+- 组织可以自定义
+- 无供应商锁定
 
-### 2. Progressive Enhancement Works
+### 2. 渐进增强有效
 
-The multi-tier degradation ensures:
-- Basic functionality without external dependencies
-- Enhanced capabilities when resources allow
-- Smooth transitions between capability levels
-- No sudden feature loss
+多层降级确保：
+- 无需外部依赖的基本功能
+- 资源允许时的增强能力
+- 能力级别之间的平滑过渡
+- 没有突然的功能丢失
 
-### 3. Hybrid Approaches Win
+### 3. 混合方法获胜
 
-Combining multiple retrieval methods:
-- Covers more use cases
-- Provides fallback options
-- Balances strengths and weaknesses
-- Improves overall reliability
+结合多种检索方法：
+- 覆盖更多用例
+- 提供回退选项
+- 平衡优缺点
+- 提高整体可靠性
 
-### 4. Simplicity Scales
+### 4. 简单可扩展
 
-Using SQLite instead of a specialized vector database:
-- Reduces operational complexity
-- Enables local-first operation
-- Simplifies backup/restore
-- Lowers barrier to entry
+使用 SQLite 而非专用向量数据库：
+- 减少操作复杂性
+- 实现本地优先操作
+- 简化备份/恢复
+- 降低入门门槛
 
-## Conclusion
+## 结论
 
-OpenClaw's memory search architecture demonstrates that sophisticated AI capabilities don't require complex infrastructure. By thoughtfully combining simple components - Markdown files, SQLite, and optional embeddings - it achieves a system that is both powerful and accessible.
+OpenClaw 的记忆搜索架构证明，复杂的 AI 能力不需要复杂的基础设施。通过深思熟虑地组合简单组件——Markdown 文件、SQLite 和可选嵌入——它实现了一个既强大又易于访问的系统。
 
-The key insight is that **the best AI memory system is one that treats both humans and AI as first-class participants**. Markdown provides the human interface, SQLite provides the performance, and the degradation strategy ensures it always works at some level.
+关键见解是**最好的 AI 记忆系统是将人类和 AI 都视为一等参与者的系统**。Markdown 提供人机界面，SQLite 提供性能，降级策略确保它始终在某个级别上工作。
 
-For developers building AI agents, OpenClaw's approach offers a blueprint: start with human-readable formats, add acceleration layers that can be rebuilt, and always provide graceful degradation paths. The result is a system that users can trust, understand, and control - essential qualities for AI systems that handle personal information.
+对于构建 AI Agent 的开发者，OpenClaw 的方法提供了一个蓝图：从人类可读的格式开始，添加可以重建的加速层，并始终提供优雅的降级路径。结果是用户可以信任、理解和控制的系统——这是处理个人信息的 AI 系统的基本品质。
 
-## References and Further Reading
+## 参考文献和延伸阅读
 
-- [OpenClaw Documentation](https://docs.openclaw.ai/concepts/memory)
-- [SQLite FTS5 Extension](https://sqlite.org/fts5.html)
-- [Understanding BM25](https://www.elastic.co/blog/understanding-bm25-ranking)
-- [Vector Search with SQLite](https://github.com/asg017/sqlite-vss)
-- [Hybrid Search Strategies](https://www.pinecone.io/learn/hybrid-search/)
+- [OpenClaw 文档](https://docs.openclaw.ai/concepts/memory)
+- [SQLite FTS5 扩展](https://sqlite.org/fts5.html)
+- [理解 BM25](https://www.elastic.co/blog/understanding-bm25-ranking)
+- [使用 SQLite 进行向量搜索](https://github.com/asg017/sqlite-vss)
+- [混合搜索策略](https://www.pinecone.io/learn/hybrid-search/)
 
 ---
 
-*This analysis is based on OpenClaw version 2026.2.17 source code examination and runtime behavior observation.*
+*本分析基于 OpenClaw 版本 2026.2.17 的源代码审查和运行时行为观察。*
