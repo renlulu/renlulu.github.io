@@ -1,8 +1,8 @@
 ---
-title: "为什么 AI Agent 总在反问你，而不是直接去做？"
+title: "从反问到自治：拆解 AI Agent 好用背后的系统设计"
 date: 2026-03-17
 categories: [AI]
-tags: [ai-agent, prompt-engineering, claude-code, codex, openclaw, system-prompt]
+tags: [ai-agent, prompt-engineering, claude-code, codex, openclaw, system-prompt, anthropic]
 ---
 
 > 你问 AI Agent："记忆文件在哪？"
@@ -15,7 +15,7 @@ tags: [ai-agent, prompt-engineering, claude-code, codex, openclaw, system-prompt
 
 这不是模型不够聪明的问题，是 **系统设计** 的问题。
 
-本文拆解三个主流 AI coding agent——Claude Code、Codex CLI、OpenClaw——看它们如何从不同层面解决这个问题。
+一个好用的 AI Agent 需要解决两个层面的问题：*敢不敢做*（单次会话内的自治）和*能不能做完*（跨会话的持续执行）。本文拆解 Claude Code、Codex CLI、OpenClaw 三个项目的源码和设计，再结合 Anthropic 的[长期运行 Agent 框架](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)，看它们如何从不同层面解决这两个问题。
 
 ## 问题的本质
 
@@ -257,27 +257,83 @@ Agent: 完成当前工具调用 → 跳过剩余 → 处理新指令
 
 这是一个 tradeoff：短 prompt 换来更大的上下文空间，代价是前几轮可能多几次工具调用来建立上下文。
 
-## 三个项目的设计比较
+## 设计比较
 
-| 维度 | Claude Code | Codex CLI | OpenClaw |
-|------|------------|-----------|----------|
-| 核心策略 | 行为契约式 Prompt | 分级自治 + 三层安全 | 工程容错 + 自治循环 |
-| Prompt 长度 | ~200+ 行 | ~300 行（可组合） | ~93 行 |
-| 自治程度 | "先做再说" | "默认就做" | "循环做完" |
-| 环境上下文 | 直接注入 | XML 结构化注入 | 工具自探索 |
-| 安全模型 | 权限确认 | Prompt + 沙盒 + Guardian LLM | Hooks + 策略 + Docker |
-| Context 管理 | 自动压缩 | 自动压缩 | 截断 + LLM 摘要 |
-| Provider 容错 | 单 provider | 单 provider | 多 key + 模型降级 |
+| 维度 | Claude Code | Codex CLI | OpenClaw | Anthropic 框架 |
+|------|------------|-----------|----------|---------------|
+| 核心策略 | 行为契约式 Prompt | 分级自治 + 三层安全 | 工程容错 + 自治循环 | 文件持久化 + 两阶段 |
+| 解决的问题 | 敢不敢做 | 敢不敢做 | 能不能做完 | 断了能不能接上 |
+| Prompt 长度 | ~200+ 行 | ~300 行（可组合） | ~93 行 | 两套独立 prompt |
+| 自治程度 | "先做再说" | "默认就做" | "循环做完" | "跨会话做完" |
+| 环境上下文 | 直接注入 | XML 结构化注入 | 工具自探索 | 进展文件 + git log |
+| 安全模型 | 权限确认 | Prompt + 沙盒 + Guardian LLM | Hooks + 策略 + Docker | git revert 回滚 |
+| Context 管理 | 自动压缩 | 自动压缩 | 截断 + LLM 摘要 | 会话间文件接力 |
 
-三个项目从不同角度解决同一个问题，但思路高度一致：
+四个方案从不同角度解决自治问题，但思路高度一致：
 
 1. **Prompt 告诉 Agent 该做什么**（而不是有什么）
 2. **系统提供上下文**（而不是让 Agent 自己探索）
 3. **安全由系统保障**（而不是靠 Agent 谨慎）
+4. **状态由文件承载**（而不是靠 context window 记住）
 
-## 四层解法
+## 跨会话：做到一半断了怎么办
 
-总结下来，让 Agent 从"反问机器"变成"行动派"，需要四层设计：
+前面讨论的都是单次会话内的自治。但真实的复杂任务往往超出一个 context window 的容量——比如"帮我搭一个完整的电商网站"。Agent 做到一半，上下文满了，新的会话开始时它什么都不记得了。
+
+Anthropic 的工程博客有一篇 [Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)，专门讨论了这个问题。他们的比喻很精确：
+
+> 这就像一个轮班制工程团队，每位新成员都不记得前一班发生了什么。
+
+### 文件系统就是外部记忆
+
+解法出奇地简单——**用文件做 Agent 的跨会话记忆**：
+
+**1. 进展文件（claude-progress.txt）**
+
+每次会话结束时，Agent 把当前状态写到一个进展文件里。下一次会话启动时，第一件事就是读这个文件。
+
+**2. Git 历史**
+
+每完成一个功能点就 git commit。新会话启动时通过 `git log` 快速了解"上一班干了什么"。
+
+**3. 功能清单（JSON）**
+
+把大任务拆成 200+ 个功能点的 JSON 列表，每个都有通过/失败状态。Agent 每次只做一个，做完标记，下次接着做下一个。
+
+### 两阶段框架
+
+Anthropic 把这套流程拆成两个 Agent：
+
+**初始化 Agent**（只跑一次）：
+- 把需求拆成功能清单
+- 创建 `init.sh` 启动脚本
+- 建立 git 基线
+- 生成进展文件模板
+
+**编码 Agent**（每次会话都跑）：
+1. 运行 `pwd` 确认环境
+2. 读 git log + 进展文件 → 知道当前状态
+3. 从功能清单里选下一个未完成任务
+4. 启动开发服务器 + 跑端到端测试
+5. 实现功能 → 验证 → commit → 更新进展文件
+
+每个会话都是一个**完整的工作循环**——读状态、做一件事、写状态。失败了可以 git revert，不会污染整体进展。
+
+### 和 context 压缩的区别
+
+OpenClaw 用 LLM 摘要来压缩上下文，本质是在**同一个会话内**延长续航。Anthropic 的方案是在**会话之间**用文件传递状态，思路完全不同：
+
+| 方案 | 适用场景 | 优点 | 缺点 |
+|------|---------|------|------|
+| LLM 摘要压缩 | 单次会话内的长任务 | 无缝，用户无感 | 压缩会丢信息 |
+| 文件持久化 | 跨会话的超长任务 | 不丢信息，可审计 | 需要设计文件格式 |
+| Git 历史 | 代码类任务 | 自带回滚能力 | 仅适用于代码 |
+
+最好的做法是组合使用：单次会话内用 context 压缩撑住，会话之间用文件 + git 接力。
+
+## 五层解法
+
+总结下来，让 Agent 从"反问机器"变成"行动派"，需要五层设计：
 
 **第一层：行为指令**
 
@@ -312,6 +368,14 @@ Agent 敢于行动的前提是行动的后果可控：
 - OpenClaw 用生命周期 Hooks + Docker 沙盒
 - 安全性在系统层面解决，不靠 Agent 自己"小心"
 
+**第五层：跨会话接力**
+
+复杂任务超出单次 context window 时，用文件系统做外部记忆：
+- 进展文件记录当前状态
+- Git commit 保存每个完成的功能点
+- 功能清单跟踪整体进度
+- 每次新会话启动时读状态、做一件事、写状态
+
 ## 一个反直觉的结论
 
 让 Agent 更聪明的方法，不是换更强的模型，而是写更好的 prompt、搭更好的系统。
@@ -322,8 +386,8 @@ Codex 按模型版本定制不同激进程度的 prompt，说明即使是同一�
 
 OpenClaw 用 93 行短 prompt 但配合完善的工程容错，走了一条"少说多做"的路。
 
-三种路径，同一个目标：**让 Agent 像一个靠谱的同事——接到任务直接干活，遇到问题自己解决，只在真正需要的时候才来问你。**
+从 Claude Code 的行为契约，到 Codex 的三层安全，到 OpenClaw 的工程容错，再到 Anthropic 的跨会话接力——四个项目从不同层面解决同一个问题：**让 Agent 像一个靠谱的同事——接到任务直接干活，遇到问题自己解决，做到一半断了能接上，只在真正需要的时候才来问你。**
 
 ---
 
-> System prompt 不是"介绍信"，是"操作手册"。模型的能力是天花板，prompt 决定了它能触到多少，工程设计决定了它能稳定触到多久。
+> System prompt 不是"介绍信"，是"操作手册"。模型的能力是天花板，prompt 决定了它能触到多少，工程设计决定了它能稳定触到多久，持久化设计决定了它能跨多远。
