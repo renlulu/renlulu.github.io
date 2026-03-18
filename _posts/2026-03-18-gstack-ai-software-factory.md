@@ -7,6 +7,12 @@ tags: [gstack, claude-code, ai-agent, workflow, playwright, bun]
 
 > 如果说 Copilot 解决的是“帮我补代码”，那么 [gstack](https://github.com/garrytan/gstack) 试图解决的是另一个层级的问题：**怎么把 AI 编程从一个助手，升级成一套完整的软件生产系统。**
 
+先说一个容易被忽略、但其实很重要的前提：**这个仓库的作者不是一个随便发 prompt 的 AI 博主，而是 Garry Tan。**
+
+如果你对美国创业圈比较熟，他现在是 **Y Combinator 的 President & CEO**。在这之前，他做过 Posterous 联合创始人，早年在 Palantir 做过很早期的设计、产品和工程管理工作，还在 2013 年亲手做过 YC 内部的 Bookface。换句话说，这不是“一个会写 prompt 的人”在谈开发流程，而是一个长期横跨 **设计、产品、工程、管理和创业投资** 的人，把自己最新一轮 AI-native 工作方法直接开源出来。
+
+所以读 `gstack` 时，我觉得不能只把它当成“又一个 agent 工具仓库”。更准确的阅读姿势是：**这是一个一线 builder 和顶级创业组织管理者，在 2026 年这个时间点公开展示自己如何用 Claude Code 组织软件生产。**
+
 这两天我把 `gstack` 这个仓库系统读了一遍：README、[ARCHITECTURE.md](https://github.com/garrytan/gstack/blob/main/ARCHITECTURE.md)、[BROWSER.md](https://github.com/garrytan/gstack/blob/main/BROWSER.md)、[docs/skills.md](https://github.com/garrytan/gstack/blob/main/docs/skills.md)、若干 `SKILL.md`、`setup` 脚本，以及 `browse/src/*` 和 `scripts/gen-skill-docs.ts` 这几个关键源码文件。
 
 读完后的结论很明确：
